@@ -15,3 +15,4 @@ rava-ast.workspace = true
 rava-lexer.workspace = true
 rava-parser.workspace = true
 rava-codegen.workspace = true
+rava-check.workspace = true

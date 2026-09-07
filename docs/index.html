@@ -215,6 +215,10 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       <span class="arrow">──▶</span> <b>fichier.rs</b> <span class="arrow">──▶</span>
       <span class="tag">rustc · sémantique</span> <span class="arrow">──▶</span> <b>binaire</b>
     </div>
+    <p class="lede" style="margin-top:14px;font-size:15px">
+      Et les erreurs de <code>rustc</code> reviennent en sens inverse : emprunt, durées de vie,
+      typage, reportés sur le <code>.rava</code>, ligne et colonne comprises.
+    </p>
   </div>
 </header>
 
@@ -405,6 +409,20 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       ou pourquoi c'est refusé. Réglages par éditeur dans
       <a href="https://github.com/geneacta/rava/blob/main/editors/README.md">editors/README.md</a>.
     </p>
+    <p>
+      À l'enregistrement, il appelle <code>rustc</code> et <strong>ramène ses erreurs sur votre
+      fichier</strong>. C'est là que vous rencontrerez le vérificateur d'emprunt — le seul
+      vrai apprentissage de Rust — mais souligné dans le code que vous avez écrit :
+    </p>
+    <pre><code><span class="c">erreur[E0502]: cannot borrow `noms` as mutable because it is
+                also borrowed as immutable</span>
+  --&gt; Panier.rava:9:9
+  |
+9 |         noms.push(<span class="s">"carole"</span>.to_string());
+  |         ^
+  = mutable borrow occurs here
+  = ligne 8 : immutable borrow occurs here
+  = ligne 11 : immutable borrow later used here</code></pre>
 
     <h3><span class="num">Étape 6</span>Votre premier programme</h3>
     <ol class="steps">
@@ -533,9 +551,13 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       Réglages dans <a href="https://github.com/geneacta/rava/blob/main/editors/README.md">editors/README.md</a>.
     </p>
     <p>
-      Ce qu'il ne fait pas encore : renommage, aller à la définition, formatage, et la remontée
-      des erreurs de <code>rustc</code> — emprunt, durées de vie — sur le <code>.rava</code>.
-      Pour celles-là, <code>ravac check</code> reste le passage obligé.
+      À l'enregistrement, le serveur invoque <code>rustc</code> sur le Rust généré et ramène ses
+      diagnostics sur le <code>.rava</code> : le codegen produit une table de correspondance des
+      lignes, et la colonne est retrouvée par le nom de l'identifiant. Les positions liées
+      d'une erreur d'emprunt — l'emprunt initial, l'usage suivant — sont ramenées aussi.
+    </p>
+    <p>
+      Ce qu'il ne fait pas encore : renommage, aller à la définition, formatage.
     </p>
 
     <h3><span class="num">Le piège</span>Les identifiants ne sont pas renommés</h3>

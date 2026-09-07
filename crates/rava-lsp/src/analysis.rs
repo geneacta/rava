@@ -1,7 +1,7 @@
 //! Ce que le serveur sait dire d'un document : erreurs, survol, complétion,
 //! plan du fichier et corrections rapides.
 
-use crate::json::Json;
+use rava_json::Json;
 use crate::kb::{self, Kind};
 use rava_ast::*;
 
@@ -43,7 +43,7 @@ impl Doc {
     }
 
     /// Étendue d'une erreur : le mot sous le curseur, ou un caractère à défaut.
-    fn error_range(&self, line: u32, col: u32) -> Json {
+    pub(crate) fn error_range(&self, line: u32, col: u32) -> Json {
         let l = line.saturating_sub(1);
         let start = col.saturating_sub(1) as usize;
         let chars: Vec<char> = self.line(l).chars().collect();
@@ -92,36 +92,57 @@ impl Doc {
 
 // ------------------------------------------------------------------ erreurs
 
+/// Diagnostics rapides : syntaxe et traduction, à chaque frappe.
 pub fn diagnostics(doc: &Doc) -> Json {
-    let mut out = Vec::new();
-    let mut push = |line: u32, col: u32, msg: &str, note: Option<&str>, code: Option<&str>| {
-        let mut fields = vec![
-            ("range", doc.error_range(line, col)),
-            ("severity", Json::int(1)),
-            ("source", Json::str("rava")),
-            (
-                "message",
-                Json::str(match note {
-                    Some(n) => format!("{msg}\n\n{n}"),
-                    None => msg.to_string(),
-                }),
-            ),
-        ];
-        if let Some(c) = code {
-            fields.push(("code", Json::str(c)));
-        }
-        out.push(Json::obj(fields));
-    };
+    to_json(doc, &rava_check::check_syntax(&doc.text))
+}
 
-    match rava_parser::parse(&doc.text) {
-        Err(e) => push(e.line, e.col, &e.message, e.note.as_deref(), e.code),
-        Ok(unit) => {
-            if let Err(e) = rava_codegen::generate(&unit) {
-                push(e.line, e.col, &e.message, e.note.as_deref(), e.code);
-            }
-        }
-    }
-    Json::Arr(out)
+/// Diagnostics complets : `rustc` en plus — emprunt, durées de vie, typage.
+/// Trop coûteux à chaque frappe, on les calcule à l'ouverture et à
+/// l'enregistrement.
+pub fn full_diagnostics(doc: &Doc, uri: &str) -> Json {
+    let name = uri.rsplit('/').next().unwrap_or("source");
+    let report = rava_check::check(&doc.text, name, rava_check::CrateType::Lib);
+    to_json(doc, &report.diagnostics)
+}
+
+fn to_json(doc: &Doc, diags: &[rava_check::Diagnostic]) -> Json {
+    Json::Arr(
+        diags
+            .iter()
+            .map(|d| {
+                let mut message = d.message.clone();
+                for n in &d.notes {
+                    message.push_str("\n\n");
+                    message.push_str(n);
+                }
+                let mut fields = vec![
+                    ("range", doc.error_range(d.line, d.col)),
+                    (
+                        "severity",
+                        Json::int(match d.level {
+                            rava_check::Level::Error => 1,
+                            rava_check::Level::Warning => 2,
+                        }),
+                    ),
+                    (
+                        "source",
+                        Json::str(if d.rust_pos.is_some() && d.code.as_deref().is_some_and(|c| c.starts_with('E'))
+                        {
+                            "rava (rustc)"
+                        } else {
+                            "rava"
+                        }),
+                    ),
+                    ("message", Json::str(message)),
+                ];
+                if let Some(c) = &d.code {
+                    fields.push(("code", Json::str(c.clone())));
+                }
+                Json::obj(fields)
+            })
+            .collect(),
+    )
 }
 
 // ------------------------------------------------------------------ survol

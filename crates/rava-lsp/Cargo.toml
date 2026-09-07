@@ -14,3 +14,5 @@ path = "src/main.rs"
 rava-ast.workspace = true
 rava-parser.workspace = true
 rava-codegen.workspace = true
+rava-json.workspace = true
+rava-check.workspace = true

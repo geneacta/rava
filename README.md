@@ -58,7 +58,13 @@ les termes de Rust.
 ```
 fichier.rava ──[ravac]──> fichier.rs ──[rustc]──> binaire
              syntaxe                  sémantique
+        ▲                                  │
+        └────── diagnostics ramenés ───────┘
 ```
+
+Les erreurs de `rustc` — emprunt, durées de vie, typage — sont reportées sur le
+`.rava`, ligne et colonne comprises. On lit du Rust, on le corrige là où on l'a
+écrit.
 
 C'est la raison pour laquelle la documentation la plus importante de ce dépôt
 est [**ce qui est impossible**](docs/IMPOSSIBLE.md) : tout ce que Rust ne sait
@@ -116,11 +122,16 @@ sur une méthode redéfinie — sont documentées dans
 cargo install --path crates/rava-lsp
 ```
 
-`rava-lsp` est un serveur de langage : il donne les erreurs en direct, le survol
-documenté, la complétion, le plan du fichier et des corrections rapides — dans
-VS Code, IntelliJ, Neovim, Helix, Zed, Sublime et Emacs. Il partage le lexer, le
-parser et le générateur de `ravac` : ce que l'éditeur signale est exactement ce
-que le compilateur refusera.
+`rava-lsp` est un serveur de langage : erreurs en direct, survol documenté,
+complétion, plan du fichier, corrections rapides — dans VS Code, IntelliJ,
+Neovim, Helix, Zed, Sublime et Emacs. Il partage le lexer, le parser et le
+générateur de `ravac` : ce que l'éditeur signale est exactement ce que le
+compilateur refusera.
+
+À l'enregistrement, il va plus loin : il appelle `rustc` sur le Rust généré et
+**ramène ses erreurs sur le `.rava`** — emprunt, durées de vie, typage, avec les
+positions liées. Le codegen produit une table de correspondance des lignes, et
+la colonne est retrouvée par le nom de l'identifiant.
 
 Pour la coloration seule, sans rien installer : un `.rava` est du Java
 syntaxiquement valide, il suffit d'associer l'extension au langage Java.
@@ -146,6 +157,8 @@ crates/rava-lexer/     tokens Java
 crates/rava-parser/    grammaire Java -> AST
 crates/rava-codegen/   AST -> source Rust
 crates/ravac/          binaire en ligne de commande
+crates/rava-check/     traduction + rustc, diagnostics ramenés sur le .rava
+crates/rava-json/      JSON minimal (protocole LSP, diagnostics rustc)
 crates/rava-lsp/       serveur de langage (LSP) pour les éditeurs
 editors/               extension VS Code, grammaire TextMate, réglages par éditeur
 examples/              programmes .rava, vérifiés par rustc dans les tests

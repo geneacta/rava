@@ -8,11 +8,10 @@
 //! plan du fichier, corrections rapides.
 
 mod analysis;
-mod json;
 mod kb;
 
 use analysis::Doc;
-use json::Json;
+use rava_json::Json;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
@@ -21,10 +20,15 @@ fn main() {
     let mut input = stdin.lock();
     let stdout = std::io::stdout();
     let mut output = stdout.lock();
-    let mut server = Server { docs: HashMap::new(), symbols: HashMap::new(), shutting_down: false };
+    let mut server = Server {
+        docs: HashMap::new(),
+        symbols: HashMap::new(),
+        check_on_save: true,
+        shutting_down: false,
+    };
 
     while let Some(msg) = read_message(&mut input) {
-        let Some(msg) = json::parse(&msg) else {
+        let Some(msg) = rava_json::parse(&msg) else {
             continue;
         };
         let method = msg.get("method").and_then(Json::as_str).unwrap_or("").to_string();
@@ -44,6 +48,9 @@ struct Server {
     /// Dernier plan valide par document : pendant qu'on tape, le fichier passe
     /// par des états illisibles, et l'esquisse ne doit pas clignoter.
     symbols: HashMap<String, Json>,
+    /// Appeler `rustc` à l'enregistrement, pour les erreurs d'emprunt, de
+    /// durée de vie et de typage. Désactivable par `initializationOptions`.
+    check_on_save: bool,
     shutting_down: bool,
 }
 
@@ -52,7 +59,14 @@ impl Server {
         let params = msg.get("params").cloned().unwrap_or(Json::Null);
 
         match method {
-            "initialize" => vec![response(id, capabilities())],
+            "initialize" => {
+                if let Some(Json::Bool(b)) =
+                    params.path(&["initializationOptions", "checkOnSave"])
+                {
+                    self.check_on_save = *b;
+                }
+                vec![response(id, capabilities())]
+            }
             "initialized" => Vec::new(),
             "shutdown" => {
                 self.shutting_down = true;
@@ -67,7 +81,7 @@ impl Server {
                     .unwrap_or("")
                     .to_string();
                 self.set_doc(uri.clone(), text);
-                vec![self.publish(&uri)]
+                vec![self.publish(&uri, self.check_on_save)]
             }
             "textDocument/didChange" => {
                 let uri = uri_of(&params, &["textDocument", "uri"]);
@@ -81,11 +95,12 @@ impl Server {
                 {
                     self.set_doc(uri.clone(), text.to_string());
                 }
-                vec![self.publish(&uri)]
+                // Pendant la frappe : syntaxe et traduction seulement.
+                vec![self.publish(&uri, false)]
             }
             "textDocument/didSave" => {
                 let uri = uri_of(&params, &["textDocument", "uri"]);
-                vec![self.publish(&uri)]
+                vec![self.publish(&uri, self.check_on_save)]
             }
             "textDocument/didClose" => {
                 let uri = uri_of(&params, &["textDocument", "uri"]);
@@ -151,8 +166,11 @@ impl Server {
         self.docs.insert(uri, doc);
     }
 
-    fn publish(&self, uri: &str) -> Json {
+    /// `full` ajoute les diagnostics de `rustc`, au prix d'un appel au
+    /// compilateur : réservé à l'ouverture et à l'enregistrement.
+    fn publish(&self, uri: &str, full: bool) -> Json {
         let diagnostics = match self.docs.get(uri) {
+            Some(d) if full => analysis::full_diagnostics(d, uri),
             Some(d) => analysis::diagnostics(d),
             None => Json::Arr(Vec::new()),
         };
@@ -286,7 +304,12 @@ mod tests {
     }
 
     fn new_server() -> Server {
-        Server { docs: HashMap::new(), symbols: HashMap::new(), shutting_down: false }
+        Server {
+            docs: HashMap::new(),
+            symbols: HashMap::new(),
+            check_on_save: false,
+            shutting_down: false,
+        }
     }
 
     #[test]
@@ -376,6 +399,23 @@ mod tests {
         open(&mut s, "class A {\n  public void f() { null\n}");
         let syms = ask(&mut s, "textDocument/documentSymbol", at(0, 0));
         assert_eq!(syms.as_arr().unwrap().len(), 1, "le plan doit rester affiché");
+    }
+
+    #[test]
+    fn les_erreurs_de_rustc_remontent_a_lenregistrement() {
+        let mut s = new_server();
+        s.check_on_save = true;
+        let src = "class A {\n  public static void main(String[] a) {\n    @Mut var v = Macro.vec(1);\n    var p = Ref.of(v[0]);\n    v.push(2);\n    System.out.println(\"{}\", p);\n  }\n}";
+        let published = open(&mut s, src);
+        let diags = published.path(&["params", "diagnostics"]).unwrap().as_arr().unwrap();
+        if diags.is_empty() {
+            return; // rustc absent de l'environnement
+        }
+        let d = &diags[0];
+        assert_eq!(d.get("code").unwrap().as_str().unwrap(), "E0502");
+        // `v.push(2);` est la 5e ligne du .rava, donc la ligne 4 en 0-basé.
+        assert_eq!(d.path(&["range", "start", "line"]).unwrap().as_u32().unwrap(), 4);
+        assert_eq!(d.get("source").unwrap().as_str().unwrap(), "rava (rustc)");
     }
 
     #[test]

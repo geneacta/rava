@@ -1,7 +1,8 @@
-//! JSON minimal, suffisant pour le protocole LSP.
+//! JSON minimal, partagé par les outils Rava.
 //!
-//! Rava n'a aucune dépendance : le compilateur et ses outils se lisent en
-//! entier. Le sous-ensemble du protocole utilisé ici tient dans ce fichier.
+//! Deux usages : le protocole LSP, et la lecture des diagnostics de `rustc`
+//! (`--error-format=json`). Rava n'a aucune dépendance — le compilateur et ses
+//! outils se lisent en entier — et ces deux besoins tiennent dans ce fichier.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

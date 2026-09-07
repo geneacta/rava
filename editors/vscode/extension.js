@@ -31,6 +31,10 @@ async function start(context) {
   const clientOptions = {
     documentSelector: [{ scheme: 'file', language: 'rava' }],
     synchronize: { fileEvents: workspace.createFileSystemWatcher('**/*.rava') },
+    initializationOptions: {
+      // `rustc` à l'enregistrement : c'est lui qui détient la sémantique.
+      checkOnSave: workspace.getConfiguration('rava').get('check.onSave', true),
+    },
   };
 
   client = new LanguageClient('rava', 'Rava', serverOptions, clientOptions);

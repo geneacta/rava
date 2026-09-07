@@ -34,6 +34,11 @@
           "default": "rava-lsp",
           "markdownDescription": "Chemin de l'exécutable `rava-lsp`. Laissez `rava-lsp` s'il est dans le `PATH`, sinon indiquez un chemin absolu (par exemple `${workspaceFolder}/target/release/rava-lsp`)."
         },
+        "rava.check.onSave": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "À l'enregistrement, invoque `rustc` sur le Rust généré et ramène ses erreurs — emprunt, durées de vie, typage — sur le `.rava`. Pendant la frappe, seules la syntaxe et la traduction sont vérifiées."
+        },
         "rava.server.enable": {
           "type": "boolean",
           "default": true,

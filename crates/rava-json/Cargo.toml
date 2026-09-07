@@ -1,0 +1,7 @@
+[package]
+name = "rava-json"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "JSON minimal partagé par les outils Rava (protocole LSP, diagnostics rustc)."

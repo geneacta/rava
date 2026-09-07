@@ -60,7 +60,10 @@ Réglages disponibles :
 {
   // Si `rava-lsp` n'est pas dans le PATH :
   "rava.server.path": "${workspaceFolder}/target/release/rava-lsp",
-  "rava.server.enable": true
+  "rava.server.enable": true,
+
+  // Appelle `rustc` à l'enregistrement : emprunt, durées de vie, typage.
+  "rava.check.onSave": true
 }
 ```
 
@@ -215,15 +218,28 @@ Attention si vous éditez aussi du Java : la ligne ci-dessus détourne
 
 | Fonction | Détail |
 |---|---|
-| **Diagnostics** | erreurs de syntaxe et de génération, avec la note qui dit quoi écrire à la place. Republiés à chaque frappe. |
+| **Diagnostics — frappe** | erreurs de syntaxe et de génération, avec la note qui dit quoi écrire à la place. Republiés à chaque frappe. |
+| **Diagnostics — enregistrement** | `rustc` est invoqué sur le Rust généré, et ses erreurs sont **ramenées sur le `.rava`** : emprunt, durées de vie, typage, avec les positions liées. Réglage `checkOnSave`. |
 | **Survol** | sur une annotation, un mot-clé, une façade ou un type : ce que la construction devient en Rust, et pourquoi. Y compris sur `null`, `try`, `instanceof` — le survol explique le refus. |
 | **Complétion** | annotations après `@`, membres après `Macro.` / `Ref.` / `Range.` / `Arr.` …, mots-clés, types Rust, et six fragments (classe, `main`, filtrage d'un `Result`, d'une `Option`, boucle sur emprunt, méthode d'interface). |
 | **Plan du fichier** | classes, records, interfaces, enums, avec champs, constantes, variantes, types associés et méthodes. |
 | **Corrections rapides** | `null` → `None` · `case X:` → `case X ->` · retirer `synchronized`. |
 
-Ce qu'il ne fait **pas** encore : renommage, aller à la définition,
-formatage, et la remontée des erreurs de `rustc` (emprunt, durées de vie) sur
-le `.rava`. Pour ces dernières, `ravac check` reste le passage obligé.
+Une erreur d'emprunt se lit intégralement dans le `.rava` :
+
+```
+erreur[E0502]: cannot borrow `noms` as mutable because it is also borrowed as immutable
+  --> Emprunt.rava:9:9
+  |
+9 |         noms.push("carole".to_string());
+  |         ^
+  = mutable borrow occurs here
+  = ligne 8 : immutable borrow occurs here
+  = ligne 11 : immutable borrow later used here
+```
+
+Ce qu'il ne fait **pas** encore : renommage, aller à la définition et
+formatage.
 
 ---
 

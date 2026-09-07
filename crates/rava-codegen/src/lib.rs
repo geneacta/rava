@@ -86,7 +86,28 @@ fn err_fix<T>(
     })
 }
 
+/// Rust généré, plus la ligne `.rava` d'origine de chaque ligne produite.
+///
+/// C'est ce qui permet de ramener les erreurs de `rustc` — emprunt, durées de
+/// vie, typage — sur le fichier que l'on a réellement écrit.
+pub struct Output {
+    pub rust: String,
+    /// Indexée par ligne générée (0-basée) ; `0` quand l'origine est inconnue.
+    pub map: Vec<u32>,
+}
+
+/// Marqueur déposé en fin de ligne pendant la génération, puis retiré.
+///
+/// Le codegen assemble certains blocs en les déplaçant (bras de `match`, corps
+/// de fermeture) : un compteur de lignes se désynchroniserait. Un marqueur
+/// voyage avec sa ligne, quoi qu'il arrive ensuite.
+const LINE_MARK: &str = "//~rava:";
+
 pub fn generate(unit: &Unit) -> R<String> {
+    Ok(generate_with_map(unit)?.rust)
+}
+
+pub fn generate_with_map(unit: &Unit) -> R<Output> {
     let mut cg = Codegen {
         out: String::new(),
         indent: 0,
@@ -94,10 +115,35 @@ pub fn generate(unit: &Unit) -> R<String> {
         needs_ushr: false,
         current_trait: None,
         current_method: None,
+        cur_line: 0,
     };
     cg.unit(unit)?;
     let prelude = if cg.needs_ushr { USHR_MASK } else { "" };
-    Ok(cg.out.replace(PRELUDE_MARKER, prelude))
+    Ok(split_marks(&cg.out.replace(PRELUDE_MARKER, prelude)))
+}
+
+/// Sépare le texte de ses marqueurs de ligne.
+fn split_marks(marked: &str) -> Output {
+    let mut rust = String::new();
+    let mut map = Vec::new();
+    for line in marked.split('\n') {
+        let (text, origin) = match line.rfind(LINE_MARK) {
+            // Un marqueur est un suffixe entièrement numérique : s'il ne l'est
+            // pas, c'est du texte de l'utilisateur, on n'y touche pas.
+            Some(i) => match line[i + LINE_MARK.len()..].parse::<u32>() {
+                Ok(n) => (line[..i].trim_end(), n),
+                Err(_) => (line, 0),
+            },
+            None => (line, 0),
+        };
+        rust.push_str(text);
+        rust.push('\n');
+        map.push(origin);
+    }
+    // `split` produit un dernier morceau vide après le `\n` final.
+    rust.pop();
+    map.pop();
+    Output { rust, map }
 }
 
 struct Codegen {
@@ -111,6 +157,8 @@ struct Codegen {
     current_trait: Option<String>,
     /// Méthode courante : `super.m()` depuis `m` serait une récursion infinie.
     current_method: Option<String>,
+    /// Ligne `.rava` en cours de traduction, reportée sur chaque ligne produite.
+    cur_line: u32,
 }
 
 impl Codegen {
@@ -122,8 +170,21 @@ impl Codegen {
                 self.out.push_str("    ");
             }
             self.out.push_str(s);
+            self.mark();
         }
         self.out.push('\n');
+    }
+
+    /// Étiquette la ligne en cours d'écriture avec son origine dans le `.rava`.
+    fn mark(&mut self) {
+        if self.cur_line > 0 {
+            let _ = write!(self.out, "  {LINE_MARK}{}", self.cur_line);
+        }
+    }
+
+    /// Fixe l'origine des lignes à venir, et rend la précédente.
+    fn at(&mut self, span: Span) -> u32 {
+        std::mem::replace(&mut self.cur_line, span.line)
     }
 
     fn blank(&mut self) {
@@ -176,6 +237,12 @@ impl Codegen {
     }
 
     fn item(&mut self, item: &Item) -> R<()> {
+        self.cur_line = match item {
+            Item::Class(c) => c.span.line,
+            Item::Interface(i) => i.span.line,
+            Item::Enum(e) => e.span.line,
+            Item::Record(r) => r.span.line,
+        };
         match item {
             Item::Class(c) => self.class(c),
             Item::Interface(i) => self.interface(i),
@@ -262,6 +329,7 @@ impl Codegen {
         } else {
             self.open(&format!("{vis}struct {}{gen}{wher} {{", c.name));
             for f in &c.fields {
+                self.cur_line = f.span.line;
                 let fvis = Self::vis(&f.modifiers);
                 self.line(&format!("{fvis}{}: {},", f.name, self.type_(&f.ty)?));
             }
@@ -649,6 +717,7 @@ impl Codegen {
     }
 
     fn const_decl(&mut self, k: &ConstDecl) -> R<()> {
+        self.cur_line = k.span.line;
         self.attrs(&k.annots, None);
         let vis = Self::vis(&k.modifiers);
         let value = self.expr(&k.value)?;
@@ -659,6 +728,7 @@ impl Codegen {
     // ------------------------------------------------------------- méthodes
 
     fn method(&mut self, m: &Method, ctx: MethodCtx<'_>) -> R<()> {
+        self.cur_line = m.span.line;
         if m.is_ctor {
             return self.constructor(m, ctx);
         }
@@ -760,6 +830,7 @@ impl Codegen {
     /// Constructeur Java -> `fn new(..) -> Self`, les `this.f = e;` devenant
     /// les champs du littéral de structure final.
     fn constructor(&mut self, m: &Method, ctx: MethodCtx<'_>) -> R<()> {
+        self.cur_line = m.span.line;
         let (MethodCtx::Inherent { owner, fields } | MethodCtx::TraitImpl { owner, fields }) = ctx
         else {
             return err(m.span, "constructeur hors d'un corps de classe");
@@ -997,6 +1068,9 @@ impl Codegen {
     }
 
     fn stmt(&mut self, s: &Stmt) -> R<()> {
+        if let Some(sp) = stmt_span(s) {
+            self.cur_line = sp.line;
+        }
         match s {
             Stmt::Empty => Ok(()),
             Stmt::Block(b) => {
@@ -1206,13 +1280,22 @@ impl Codegen {
         self.out.push_str("} else ");
     }
 
+    /// Termine une ligne poussée à la main (`} else if … {`).
+    fn end_raw_line(&mut self) {
+        self.mark();
+        self.out.push('\n');
+    }
+
     /// Émet `if ... { }` à la suite d'un `} else ` déjà écrit sans saut de ligne.
     fn stmt_inline_if(&mut self, s: &Stmt) -> R<()> {
-        let Stmt::If { cond, then, otherwise, .. } = s else {
+        let Stmt::If { cond, then, otherwise, span } = s else {
             return err(Span::default(), "if attendu");
         };
+        let outer = self.at(*span);
         let c = self.expr(cond)?;
-        self.out.push_str(&format!("if {c} {{\n"));
+        self.out.push_str(&format!("if {c} {{"));
+        self.end_raw_line();
+        self.cur_line = outer;
         self.stmt_as_body(then)?;
         match otherwise {
             None => self.close("}"),
@@ -1746,6 +1829,28 @@ fn java_float_literal(s: &str) -> String {
     }
 }
 
+/// Ligne source d'une instruction, quand elle en porte une.
+fn stmt_span(s: &Stmt) -> Option<Span> {
+    Some(match s {
+        Stmt::Local { span, .. }
+        | Stmt::LocalPattern { span, .. }
+        | Stmt::Return(_, span)
+        | Stmt::If { span, .. }
+        | Stmt::While { span, .. }
+        | Stmt::DoWhile { span, .. }
+        | Stmt::For { span, .. }
+        | Stmt::ForEach { span, .. }
+        | Stmt::Loop { span, .. }
+        | Stmt::Break(_, _, span)
+        | Stmt::Continue(_, span)
+        | Stmt::Unsafe(_, span) => *span,
+        Stmt::Block(b) => b.span,
+        Stmt::Switch(sw) => sw.span,
+        Stmt::Expr(e) => e.span(),
+        Stmt::Empty => return None,
+    })
+}
+
 fn contains_continue(s: &Stmt) -> bool {
     match s {
         Stmt::Continue(..) => true,
@@ -1851,5 +1956,79 @@ mod tests {
         let unit = rava_parser::parse("class T { public synchronized void f() { } }").unwrap();
         let d = generate(&unit).unwrap_err();
         assert!(d.note.unwrap().contains("Mutex"));
+    }
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::*;
+
+    /// Chaque ligne générée doit pointer sur la ligne `.rava` qui l'a produite.
+    #[test]
+    fn la_table_suit_les_lignes() {
+        let src = "\
+class Compte {
+    i64 solde;
+    public void crediter(i64 m) {
+        this.solde += m;
+        g();
+    }
+}";
+        let unit = rava_parser::parse(src).unwrap();
+        let out = generate_with_map(&unit).unwrap();
+        let find = |needle: &str| {
+            let i = out.rust.lines().position(|l| l.contains(needle)).expect(needle);
+            out.map[i]
+        };
+        assert_eq!(find("struct Compte"), 1);
+        assert_eq!(find("solde: i64"), 2);
+        assert_eq!(find("fn crediter"), 3);
+        assert_eq!(find("self.solde += m"), 4);
+        assert_eq!(find("g();"), 5);
+    }
+
+    /// Les bras de `match` sont assemblés en déplaçant du texte : le marqueur
+    /// doit voyager avec sa ligne.
+    #[test]
+    fn la_table_survit_au_deplacement_des_blocs() {
+        let src = "\
+class A {
+    void f(E e) {
+        switch (e) {
+            case E.X -> {
+                un();
+            }
+            case E.Y -> deux();
+        }
+    }
+}";
+        let unit = rava_parser::parse(src).unwrap();
+        let out = generate_with_map(&unit).unwrap();
+        let i = out.rust.lines().position(|l| l.contains("un();")).unwrap();
+        assert_eq!(out.map[i], 5);
+    }
+
+    #[test]
+    fn aucun_marqueur_ne_subsiste_dans_le_rust() {
+        for src in [
+            "class A { void f() { if (a) { x(); } else if (b) { y(); } else { z(); } } }",
+            "class A { void f() { var g = (x) -> { return x + 1; }; } }",
+        ] {
+            let unit = rava_parser::parse(src).unwrap();
+            let out = generate_with_map(&unit).unwrap();
+            assert!(!out.rust.contains(LINE_MARK), "{}", out.rust);
+            assert_eq!(out.map.len(), out.rust.lines().count());
+        }
+    }
+
+    /// Un `//~rava:` écrit par l'utilisateur ne doit pas être pris pour un marqueur.
+    #[test]
+    fn un_faux_marqueur_dans_une_chaine_est_preserve() {
+        let unit = rava_parser::parse(
+            r#"class A { void f() { var s = "voir //~rava:oui"; } }"#,
+        )
+        .unwrap();
+        let out = generate_with_map(&unit).unwrap();
+        assert!(out.rust.contains(r#""voir //~rava:oui""#), "{}", out.rust);
     }
 }

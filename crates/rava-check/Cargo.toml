@@ -1,0 +1,12 @@
+[package]
+name = "rava-check"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Vérification complète d'un source Rava : traduction, rustc, diagnostics ramenés sur le .rava."
+
+[dependencies]
+rava-parser.workspace = true
+rava-codegen.workspace = true
+rava-json.workspace = true

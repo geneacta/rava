@@ -4,6 +4,7 @@
 //! puis délègue à `rustc` : le typage, l'emprunt et les durées de vie restent
 //! exactement ceux de Rust.
 
+use rava_check::{CrateType, Diagnostic, Level};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -85,29 +86,42 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         }
         "check" | "run" => {
             let path = need_path(rest)?;
-            let rust = translate_file(&path)?;
-            let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-            let dir = std::env::temp_dir().join(format!("ravac-{stem}"));
-            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            let rs = dir.join(format!("{stem}.rs"));
-            std::fs::write(&rs, &rust).map_err(|e| e.to_string())?;
+            let src =
+                std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let crate_type =
+                if cmd == "run" { CrateType::Bin } else { CrateType::Lib };
+            let report = rava_check::check(&src, &path.to_string_lossy(), crate_type);
 
-            let bin = dir.join(&stem);
-            let mut c = Command::new("rustc");
-            c.arg("--edition=2021").arg(&rs).arg("-o").arg(&bin);
-            if cmd == "check" {
-                // Une bibliothèque : un fichier sans `main` reste vérifiable.
-                c.arg("--emit=metadata").arg("--crate-type=lib");
+            for d in &report.diagnostics {
+                eprint!("{}", render(&path, &src, d));
             }
-            let status = c.status().map_err(|e| format!("rustc introuvable: {e}"))?;
-            if !status.success() {
-                eprintln!("\nRust généré : {}", rs.display());
+            if !report.rustc_available {
+                eprintln!(
+                    "attention: `rustc` est introuvable — seule la syntaxe Rava a été vérifiée."
+                );
+            }
+            if let Some(p) = &report.rust_path {
+                if report.has_errors() {
+                    eprintln!("Rust généré : {}", p.display());
+                }
+            }
+            if report.has_errors() {
                 return Ok(ExitCode::FAILURE);
             }
+
             if cmd == "check" {
-                println!("ok — {}", path.display());
+                let warnings =
+                    report.diagnostics.iter().filter(|d| d.level == Level::Warning).count();
+                match warnings {
+                    0 => println!("ok — {}", path.display()),
+                    n => println!("ok — {} ({n} avertissement(s))", path.display()),
+                }
                 return Ok(ExitCode::SUCCESS);
             }
+
+            let Some(bin) = report.binary else {
+                return Err("aucun exécutable produit".into());
+            };
             let status = Command::new(&bin)
                 .args(rest.iter().skip(1))
                 .status()
@@ -143,36 +157,65 @@ fn collect_rava(p: &Path) -> Result<Vec<PathBuf>, String> {
 
 fn translate_file(path: &Path) -> Result<String, String> {
     let src = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let unit = rava_parser::parse(&src)
-        .map_err(|e| render_diag(path, &src, e.line, e.col, &e.message, e.note.as_deref()))?;
-    rava_codegen::generate(&unit)
-        .map_err(|e| render_diag(path, &src, e.line, e.col, &e.message, e.note.as_deref()))
+    let unit = rava_parser::parse(&src).map_err(|e| {
+        render(
+            path,
+            &src,
+            &Diagnostic {
+                level: Level::Error,
+                code: e.code.map(str::to_string),
+                message: e.message,
+                line: e.line,
+                col: e.col,
+                rust_pos: None,
+                notes: e.note.into_iter().collect(),
+            },
+        )
+    })?;
+    rava_codegen::generate(&unit).map_err(|e| {
+        render(
+            path,
+            &src,
+            &Diagnostic {
+                level: Level::Error,
+                code: e.code.map(str::to_string),
+                message: e.message,
+                line: e.line,
+                col: e.col,
+                rust_pos: None,
+                notes: e.note.into_iter().collect(),
+            },
+        )
+    })
 }
 
-/// Diagnostic à la manière de rustc, ancré sur le source `.rava`.
-fn render_diag(
-    path: &Path,
-    src: &str,
-    line: u32,
-    col: u32,
-    msg: &str,
-    note: Option<&str>,
-) -> String {
-    let mut out = format!("{msg}\n  --> {}:{line}:{col}\n", path.display());
-    if let Some(text) = src.lines().nth(line.saturating_sub(1) as usize) {
-        let gutter = line.to_string().len();
+/// Diagnostic à la manière de rustc, toujours ancré sur le source `.rava` —
+/// y compris quand il vient de `rustc` lui-même.
+fn render(path: &Path, src: &str, d: &Diagnostic) -> String {
+    let head = match &d.code {
+        Some(c) => format!("{}[{c}]", d.level.label()),
+        None => d.level.label().to_string(),
+    };
+    let mut out = format!("{head}: {}\n  --> {}:{}:{}\n", d.message, path.display(), d.line, d.col);
+
+    if let Some(text) = src.lines().nth(d.line.saturating_sub(1) as usize) {
+        let gutter = d.line.to_string().len();
         out.push_str(&format!("{:w$} |\n", "", w = gutter));
-        out.push_str(&format!("{line} | {text}\n"));
+        out.push_str(&format!("{} | {text}\n", d.line));
         out.push_str(&format!(
             "{:w$} | {:c$}^\n",
             "",
             "",
             w = gutter,
-            c = col.saturating_sub(1) as usize
+            c = d.col.saturating_sub(1) as usize
         ));
     }
-    if let Some(n) = note {
-        out.push_str(&format!("  = note: {n}\n"));
+    for n in &d.notes {
+        out.push_str(&format!("  = {n}\n"));
     }
+    if let Some((l, c)) = d.rust_pos {
+        out.push_str(&format!("  = rustc, dans le Rust généré, ligne {l} colonne {c}\n"));
+    }
+    out.push('\n');
     out
 }
