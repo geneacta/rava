@@ -95,7 +95,7 @@ String s = null;          // ❌ erreur de compilation Rava
 ```
 
 ```java
-Option<String> s = None();                 // ✅
+Option<String> s = None;                 // ✅
 Option<String> s = Some("bonjour".to_string());
 
 switch (s) {
@@ -483,7 +483,7 @@ vers la section correspondante :
    |
 14 |         String nom = null;
    |                      ^
-  = note: utilisez Option<T> : Option.none() / Option.some(x). Voir docs/IMPOSSIBLE.md#null
+  = note: utilisez Option<T> : `None` / `Some(x)`. Voir docs/IMPOSSIBLE.md#null
 ```
 
 Tout ce qui n'est pas listé ici est laissé à `rustc`, dans le vocabulaire de

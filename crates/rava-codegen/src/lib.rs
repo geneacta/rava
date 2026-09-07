@@ -13,6 +13,8 @@ pub struct Diag {
     pub line: u32,
     pub col: u32,
     pub note: Option<String>,
+    /// Identifiant stable, sur lequel les outils accrochent une correction.
+    pub code: Option<&'static str>,
 }
 
 impl std::fmt::Display for Diag {
@@ -55,7 +57,7 @@ const USHR_MASK: &str = r#"mod __rava {
 "#;
 
 fn err<T>(span: Span, msg: impl Into<String>) -> R<T> {
-    Err(Diag { message: msg.into(), line: span.line, col: span.col, note: None })
+    Err(Diag { message: msg.into(), line: span.line, col: span.col, note: None, code: None })
 }
 
 fn err_note<T>(span: Span, msg: impl Into<String>, note: impl Into<String>) -> R<T> {
@@ -64,6 +66,23 @@ fn err_note<T>(span: Span, msg: impl Into<String>, note: impl Into<String>) -> R
         line: span.line,
         col: span.col,
         note: Some(note.into()),
+        code: None,
+    })
+}
+
+/// Comme `err_note`, avec un code stable exploitable par un éditeur.
+fn err_fix<T>(
+    span: Span,
+    msg: impl Into<String>,
+    note: impl Into<String>,
+    code: &'static str,
+) -> R<T> {
+    Err(Diag {
+        message: msg.into(),
+        line: span.line,
+        col: span.col,
+        note: Some(note.into()),
+        code: Some(code),
     })
 }
 
@@ -644,10 +663,11 @@ impl Codegen {
             return self.constructor(m, ctx);
         }
         if m.modifiers.contains(&Modifier::Synchronized) {
-            return err_note(
+            return err_fix(
                 m.span,
                 "`synchronized` n'a pas d'effet en Rust",
                 "il n'y a pas de moniteur par objet : protégez la donnée avec `Mutex<T>` ou `RwLock<T>`. Voir docs/IMPOSSIBLE.md#concurrence",
+                "rava.synchronized",
             );
         }
         self.attrs(&m.annots, None);

@@ -1,0 +1,6 @@
+# Un .rava est du Java syntaxiquement valide : GitHub peut le colorer tel quel.
+*.rava linguist-language=Java
+*.rava text eol=lf
+
+# Le Rust produit par ravac n'est pas écrit à la main.
+*.rava.rs linguist-generated=true

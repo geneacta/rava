@@ -6,6 +6,7 @@ members = [
     "crates/rava-parser",
     "crates/rava-codegen",
     "crates/ravac",
+    "crates/rava-lsp",
 ]
 
 [workspace.package]

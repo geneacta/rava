@@ -1,0 +1,61 @@
+{
+  "name": "rava",
+  "displayName": "Rava",
+  "description": "Rust avec la syntaxe de Java : coloration, diagnostics, survol, complétion et corrections rapides.",
+  "version": "0.1.0",
+  "publisher": "geneacta",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/geneacta/rava.git" },
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages", "Linters"],
+  "activationEvents": ["onLanguage:rava"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "rava",
+        "aliases": ["Rava", "rava"],
+        "extensions": [".rava"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rava",
+        "scopeName": "source.rava",
+        "path": "./syntaxes/rava.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Rava",
+      "properties": {
+        "rava.server.path": {
+          "type": "string",
+          "default": "rava-lsp",
+          "markdownDescription": "Chemin de l'exécutable `rava-lsp`. Laissez `rava-lsp` s'il est dans le `PATH`, sinon indiquez un chemin absolu (par exemple `${workspaceFolder}/target/release/rava-lsp`)."
+        },
+        "rava.server.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Active le serveur de langage (diagnostics, survol, complétion, corrections)."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "rava.restartServer",
+        "title": "Rava : redémarrer le serveur de langage"
+      },
+      {
+        "command": "rava.showGeneratedRust",
+        "title": "Rava : afficher le Rust généré"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "echo 'aucune étape de compilation'"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

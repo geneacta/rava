@@ -1,0 +1,16 @@
+[package]
+name = "rava-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Serveur LSP pour Rava : diagnostics, survol, complétion, symboles, corrections."
+
+[[bin]]
+name = "rava-lsp"
+path = "src/main.rs"
+
+[dependencies]
+rava-ast.workspace = true
+rava-parser.workspace = true
+rava-codegen.workspace = true

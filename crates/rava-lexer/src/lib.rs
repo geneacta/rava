@@ -98,7 +98,10 @@ impl<'a> Lexer<'a> {
         if c == b'\n' {
             self.line += 1;
             self.col = 1;
-        } else {
+        } else if c & 0xC0 != 0x80 {
+            // Les octets de continuation UTF-8 ne comptent pas : une colonne
+            // est un caractère, pas un octet — c'est ce qu'attendent les
+            // éditeurs comme le curseur des diagnostics.
             self.col += 1;
         }
         Some(c)
@@ -422,6 +425,13 @@ mod tests {
         let toks = lex(">>>= >>> >> >").unwrap();
         let texts: Vec<_> = toks.iter().map(|t| t.text.as_str()).collect();
         assert_eq!(texts, [">>>=", ">>>", ">>", ">", ""]);
+    }
+
+    #[test]
+    fn les_colonnes_comptent_des_caracteres() {
+        let toks = lex("var é = 1; var x = 2;").unwrap();
+        let x = toks.iter().find(|t| t.text == "x").unwrap();
+        assert_eq!(x.span.col, 16, "« é » doit compter pour une seule colonne");
     }
 
     #[test]

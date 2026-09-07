@@ -390,7 +390,23 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       et <code>ravac</code> parenthèse ce qu'il faut pour que le sens écrit soit le sens compilé.
     </p>
 
-    <h3><span class="num">Étape 5</span>Votre premier programme</h3>
+    <h3><span class="num">Étape 5</span>Installez l'outillage</h3>
+    <p>
+      Votre IDE sait déjà colorer un <code>.rava</code> : c'est du Java valide, il suffit
+      d'associer l'extension au langage Java. Pour le reste — erreurs en direct, survol
+      qui explique ce que chaque annotation devient en Rust, complétion, corrections rapides —
+      installez le serveur de langage :
+    </p>
+    <pre><code>cargo install --path crates/rava-lsp</code></pre>
+    <p>
+      Il fonctionne dans VS Code, IntelliJ, Neovim, Helix, Zed, Sublime et Emacs.
+      Le survol est le meilleur compagnon d'apprentissage : passez la souris sur
+      <code>@Mut</code>, sur <code>implies</code>, sur <code>null</code> — il vous dit ce que ça devient,
+      ou pourquoi c'est refusé. Réglages par éditeur dans
+      <a href="https://github.com/geneacta/rava/blob/main/editors/README.md">editors/README.md</a>.
+    </p>
+
+    <h3><span class="num">Étape 6</span>Votre premier programme</h3>
     <ol class="steps">
       <li><b>Écrivez un <code>.rava</code></b>
         Une classe, un <code>public static void main(String[] args)</code>, et <code>System.out.println("{}", x)</code> — le format est celui de Rust.</li>
@@ -507,6 +523,21 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       <code>a xor b and c</code> produit <code>a ^ (b &amp;&amp; c)</code>.</p>
     </div>
 
+    <h3><span class="num">Outillage</span>Un serveur de langage, partout</h3>
+    <pre><code>cargo install --path crates/rava-lsp</code></pre>
+    <p>
+      <code>rava-lsp</code> partage le lexer, le parser et le générateur de <code>ravac</code> :
+      ce que l'éditeur souligne est exactement ce que le compilateur refusera. Diagnostics,
+      survol, complétion, plan du fichier, corrections rapides — dans VS Code, IntelliJ (via LSP4IJ),
+      Neovim, Helix, Zed, Sublime et Emacs.
+      Réglages dans <a href="https://github.com/geneacta/rava/blob/main/editors/README.md">editors/README.md</a>.
+    </p>
+    <p>
+      Ce qu'il ne fait pas encore : renommage, aller à la définition, formatage, et la remontée
+      des erreurs de <code>rustc</code> — emprunt, durées de vie — sur le <code>.rava</code>.
+      Pour celles-là, <code>ravac check</code> reste le passage obligé.
+    </p>
+
     <h3><span class="num">Le piège</span>Les identifiants ne sont pas renommés</h3>
     <p>
       <code>camelCase</code> reste <code>camelCase</code> dans le Rust produit — le fichier généré
@@ -565,6 +596,10 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
     <a href="https://github.com/geneacta/rava/blob/main/docs/ANNOTATIONS.md">
       <div class="t">ANNOTATIONS.md</div>
       <div class="d">Référence des annotations : emprunts, durées de vie, attributs.</div>
+    </a>
+    <a href="https://github.com/geneacta/rava/blob/main/editors/README.md">
+      <div class="t">editors/</div>
+      <div class="d">Serveur de langage et coloration : VS Code, IntelliJ, Neovim, Helix, Zed…</div>
     </a>
     <a href="https://github.com/geneacta/rava">
       <div class="t">geneacta/rava</div>

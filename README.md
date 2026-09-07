@@ -110,6 +110,24 @@ Les deux réserves — relecture de la place pour `x++`, et `super.m()` interdit
 sur une méthode redéfinie — sont documentées dans
 [IMPOSSIBLE.md](docs/IMPOSSIBLE.md#masques).
 
+## Dans votre éditeur
+
+```sh
+cargo install --path crates/rava-lsp
+```
+
+`rava-lsp` est un serveur de langage : il donne les erreurs en direct, le survol
+documenté, la complétion, le plan du fichier et des corrections rapides — dans
+VS Code, IntelliJ, Neovim, Helix, Zed, Sublime et Emacs. Il partage le lexer, le
+parser et le générateur de `ravac` : ce que l'éditeur signale est exactement ce
+que le compilateur refusera.
+
+Pour la coloration seule, sans rien installer : un `.rava` est du Java
+syntaxiquement valide, il suffit d'associer l'extension au langage Java.
+
+Le détail par éditeur — et l'extension VS Code — est dans
+[editors/README.md](editors/README.md).
+
 ## Documentation
 
 | | |
@@ -128,6 +146,8 @@ crates/rava-lexer/     tokens Java
 crates/rava-parser/    grammaire Java -> AST
 crates/rava-codegen/   AST -> source Rust
 crates/ravac/          binaire en ligne de commande
+crates/rava-lsp/       serveur de langage (LSP) pour les éditeurs
+editors/               extension VS Code, grammaire TextMate, réglages par éditeur
 examples/              programmes .rava, vérifiés par rustc dans les tests
 docs/                  documentation et site GitHub Pages
 ```

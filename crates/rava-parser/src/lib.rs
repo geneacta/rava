@@ -10,6 +10,8 @@ pub struct ParseError {
     pub col: u32,
     /// Renvoi vers la documentation quand la construction est volontairement absente.
     pub note: Option<String>,
+    /// Identifiant stable, sur lequel les outils accrochent une correction.
+    pub code: Option<&'static str>,
 }
 
 impl std::fmt::Display for ParseError {
@@ -30,8 +32,18 @@ pub fn parse(src: &str) -> PResult<Unit> {
         line: e.span.line,
         col: e.span.col,
         note: None,
+        code: None,
     })?;
-    Parser { toks, i: 0, in_guard: 0 }.unit()
+    {
+        let mut p = Parser { toks, i: 0, in_guard: 0, furthest: None };
+        match p.unit() {
+            Ok(u) => Ok(u),
+            Err(e) => Err(match p.furthest {
+                Some(f) if (f.line, f.col) > (e.line, e.col) => f,
+                _ => e,
+            }),
+        }
+    }
 }
 
 const MODIFIERS: &[&str] = &[
@@ -66,6 +78,10 @@ struct Parser {
     /// Dans une garde `case X when …`, `->` termine le motif : il ne peut donc
     /// pas ouvrir une lambda. `x == y -> …` se lit `x == y`, puis la flèche.
     in_guard: u32,
+    /// L'erreur la plus avancée rencontrée, y compris dans une tentative
+    /// abandonnée. La grammaire Java demande du retour arrière : sans cela, on
+    /// rapporterait l'échec du repli plutôt que la vraie cause.
+    furthest: Option<ParseError>,
 }
 
 impl Parser {
@@ -98,7 +114,7 @@ impl Parser {
 
     fn err<T>(&self, msg: impl Into<String>) -> PResult<T> {
         let s = self.tok().span;
-        Err(ParseError { message: msg.into(), line: s.line, col: s.col, note: None })
+        Err(ParseError { message: msg.into(), line: s.line, col: s.col, note: None, code: None })
     }
 
     fn err_note<T>(&self, msg: impl Into<String>, note: impl Into<String>) -> PResult<T> {
@@ -108,6 +124,25 @@ impl Parser {
             line: s.line,
             col: s.col,
             note: Some(note.into()),
+            code: None,
+        })
+    }
+
+    /// Comme `err_note`, avec un code stable que les éditeurs peuvent traduire
+    /// en correction rapide.
+    fn err_fix<T>(
+        &self,
+        msg: impl Into<String>,
+        note: impl Into<String>,
+        code: &'static str,
+    ) -> PResult<T> {
+        let s = self.tok().span;
+        Err(ParseError {
+            message: msg.into(),
+            line: s.line,
+            col: s.col,
+            note: Some(note.into()),
+            code: Some(code),
         })
     }
 
@@ -167,14 +202,35 @@ impl Parser {
     }
 
     /// Exécute `f` ; en cas d'échec, restaure la position et renvoie `None`.
+    ///
+    /// L'erreur abandonnée est retenue si elle va plus loin que les
+    /// précédentes : c'est presque toujours celle qui décrit le vrai problème.
     fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> PResult<T>) -> Option<T> {
         let save = self.i;
         match f(self) {
             Ok(v) => Some(v),
-            Err(_) => {
+            Err(e) => {
+                self.note_error(e);
                 self.i = save;
                 None
             }
+        }
+    }
+
+    fn note_error(&mut self, e: ParseError) {
+        // Une erreur sans note est un simple échec de forme ; on privilégie
+        // celles qui expliquent, à position égale.
+        let better = match &self.furthest {
+            None => true,
+            Some(f) => {
+                (e.line, e.col) > (f.line, f.col)
+                    || ((e.line, e.col) == (f.line, f.col)
+                        && f.note.is_none()
+                        && e.note.is_some())
+            }
+        };
+        if better {
+            self.furthest = Some(e);
         }
     }
 
@@ -1177,9 +1233,10 @@ impl Parser {
                 None
             };
             if self.tok().is_punct(":") {
-                return self.err_note(
+                return self.err_fix(
                     "la forme `case X:` du switch n'est pas supportée",
                     "utilisez la forme flèche `case X -> ...;` : elle se traduit directement en bras de `match`. Voir docs/SYNTAX.md#switch",
+                    "rava.case-colon",
                 );
             }
             self.expect_punct("->")?;
@@ -1691,9 +1748,10 @@ impl Parser {
                     return Ok(Expr::Lit(Lit::Bool(false), span));
                 }
                 "null" => {
-                    return self.err_note(
+                    return self.err_fix(
                         "`null` n'existe pas en Rust",
-                        "utilisez Option<T> : Option.none() / Option.some(x). Voir docs/IMPOSSIBLE.md#null",
+                        "utilisez Option<T> : `None`, ou `Some(x)`. Voir docs/IMPOSSIBLE.md#null",
+                        "rava.null",
                     )
                 }
                 "this" => {

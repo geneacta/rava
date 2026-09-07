@@ -1,0 +1,205 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Rava",
+  "scopeName": "source.rava",
+  "fileTypes": ["rava"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#annotations" },
+    { "include": "#strings" },
+    { "include": "#refused" },
+    { "include": "#declarations" },
+    { "include": "#keywords" },
+    { "include": "#word-operators" },
+    { "include": "#constants" },
+    { "include": "#types" },
+    { "include": "#facades" },
+    { "include": "#numbers" },
+    { "include": "#calls" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.documentation.rava",
+          "begin": "/\\*\\*(?!/)",
+          "end": "\\*/",
+          "patterns": [{ "name": "keyword.other.documentation.rava", "match": "@\\w+" }]
+        },
+        { "name": "comment.block.rava", "begin": "/\\*", "end": "\\*/" },
+        { "name": "comment.line.documentation.rava", "match": "///.*$" },
+        { "name": "comment.line.double-slash.rava", "match": "//.*$" }
+      ]
+    },
+
+    "annotations": {
+      "patterns": [
+        {
+          "comment": "Les annotations portent la sémantique Rust : emprunt, mutabilité, durée de vie.",
+          "match": "(@)(Ref|Mut|Owned|Ptr|Lifetime|Where|Const|Dyn|Impl|Override|Derive|Repr|Attr|Doc|Inline|Test|Unsafe|Async|Extern|Named|Struct|Rust)\\b",
+          "captures": {
+            "1": { "name": "punctuation.definition.annotation.rava" },
+            "2": { "name": "storage.modifier.annotation.rava" }
+          }
+        },
+        {
+          "match": "(@)([A-Z]\\w*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.annotation.rava" },
+            "2": { "name": "storage.modifier.annotation.unknown.rava" }
+          }
+        }
+      ]
+    },
+
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.rava",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [{ "name": "constant.character.escape.rava", "match": "\\\\." }]
+        },
+        {
+          "name": "string.quoted.double.rava",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.rava", "match": "\\\\(u\\{?[0-9A-Fa-f]+\\}?|.)" },
+            {
+              "comment": "Les accolades de format sont celles de Rust, pas celles de Java.",
+              "name": "constant.other.placeholder.rava",
+              "match": "\\{[^{}]*\\}"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.rava",
+          "begin": "'",
+          "end": "'",
+          "patterns": [{ "name": "constant.character.escape.rava", "match": "\\\\." }]
+        }
+      ]
+    },
+
+    "refused": {
+      "comment": "Constructions Java sans équivalent Rust : signalées dès la coloration.",
+      "name": "invalid.illegal.refused.rava",
+      "match": "\\b(null|try|catch|finally|throw|throws|instanceof)\\b"
+    },
+
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(class|interface|enum|record)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": { "name": "storage.type.rava" },
+            "2": { "name": "entity.name.type.rava" }
+          }
+        },
+        {
+          "match": "\\b(implements|extends|permits)\\b",
+          "name": "storage.modifier.rava"
+        }
+      ]
+    },
+
+    "keywords": {
+      "patterns": [
+        {
+          "comment": "`unless` est propre à Rava : `unless (c)` vaut `if !c`.",
+          "name": "keyword.control.unless.rava",
+          "match": "\\b(unless)\\b"
+        },
+        {
+          "name": "keyword.control.rava",
+          "match": "\\b(if|else|while|do|for|switch|case|default|return|break|continue|loop|when|yield)\\b"
+        },
+        {
+          "name": "storage.type.rava",
+          "match": "\\b(class|interface|enum|record|type|var|new)\\b"
+        },
+        {
+          "name": "storage.modifier.rava",
+          "match": "\\b(public|private|protected|static|final|abstract|native|transient|volatile|strictfp|sealed)\\b"
+        },
+        {
+          "comment": "`synchronized` et `super` sont acceptés par la grammaire mais contraints.",
+          "name": "invalid.deprecated.rava",
+          "match": "\\b(synchronized|super)\\b"
+        },
+        {
+          "name": "keyword.control.import.rava",
+          "match": "\\b(package|import)\\b"
+        },
+        { "name": "variable.language.this.rava", "match": "\\b(this|Self)\\b" }
+      ]
+    },
+
+    "word-operators": {
+      "comment": "Opérateurs logiques en toutes lettres, précédence logique classique.",
+      "name": "keyword.operator.word.rava",
+      "match": "\\b(and|or|xor|nand|nor|xnor|implies|not)\\b"
+    },
+
+    "constants": {
+      "patterns": [
+        { "name": "constant.language.rava", "match": "\\b(true|false)\\b" },
+        { "name": "constant.language.rava", "match": "\\b(None|Some|Ok|Err)\\b" },
+        { "name": "variable.other.constant.rava", "match": "\\b[A-Z][A-Z0-9_]{2,}\\b" }
+      ]
+    },
+
+    "types": {
+      "patterns": [
+        {
+          "comment": "Primitives Java, alias des types Rust.",
+          "name": "support.type.primitive.rava",
+          "match": "\\b(int|long|short|byte|float|double|boolean|char|void)\\b"
+        },
+        {
+          "comment": "Types Rust, utilisables tels quels.",
+          "name": "support.type.rust.rava",
+          "match": "\\b(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64|bool|str|String|Vec|Option|Result|Box|Rc|Arc|Cell|RefCell|Mutex|RwLock|HashMap|HashSet|BTreeMap|Tuple|Array|Unit|Fn0|Fn1|Fn2|Fn3|FnMut0|FnMut1|FnMut2|FnOnce0|FnOnce1|FnOnce2)\\b"
+        },
+        { "name": "entity.name.type.rava", "match": "\\b[A-Z]\\w*\\b" }
+      ]
+    },
+
+    "facades": {
+      "comment": "Façades : la forme Java de ce que Rust écrit avec une syntaxe propre.",
+      "match": "\\b(Macro|Ref|Deref|Range|Tuple|Arr|Move|Rust|System)(?=\\s*\\.)",
+      "name": "support.class.facade.rava"
+    },
+
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.hex.rava", "match": "\\b0[xX][0-9a-fA-F_]+([iu](8|16|32|64|128|size))?\\b" },
+        { "name": "constant.numeric.binary.rava", "match": "\\b0[bB][01_]+([iu](8|16|32|64|128|size))?\\b" },
+        { "name": "constant.numeric.rava", "match": "\\b[0-9][0-9_]*(\\.[0-9_]+)?([eE][+-]?[0-9]+)?([LlfFdD]|[iu](8|16|32|64|128|size)|f(32|64))?\\b" }
+      ]
+    },
+
+    "calls": {
+      "patterns": [
+        {
+          "match": "\\b([a-z_]\\w*)\\s*(?=\\()",
+          "captures": { "1": { "name": "entity.name.function.rava" } }
+        }
+      ]
+    },
+
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.arrow.rava", "match": "->|::" },
+        {
+          "comment": "`>>>` est masqué par ravac vers un décalage logique.",
+          "name": "keyword.operator.bitwise.rava",
+          "match": ">>>|<<|>>"
+        },
+        { "name": "keyword.operator.rava", "match": "[+\\-*/%=!<>&|^~?:]+" }
+      ]
+    }
+  }
+}
