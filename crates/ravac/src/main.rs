@@ -96,7 +96,8 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             let mut c = Command::new("rustc");
             c.arg("--edition=2021").arg(&rs).arg("-o").arg(&bin);
             if cmd == "check" {
-                c.arg("--emit=metadata");
+                // Une bibliothèque : un fichier sans `main` reste vérifiable.
+                c.arg("--emit=metadata").arg("--crate-type=lib");
             }
             let status = c.status().map_err(|e| format!("rustc introuvable: {e}"))?;
             if !status.success() {
