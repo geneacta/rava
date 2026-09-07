@@ -1,0 +1,57 @@
+package examples;
+
+/**
+ * Opérateurs logiques en toutes lettres.
+ *
+ * Précédence, du plus lâche au plus serré :
+ * `implies` < `or` / `nor` < `xor` / `xnor` < `and` / `nand` < `not` < comparaisons.
+ * `implies` est associatif à droite.
+ */
+public class Logic {
+
+    /** Une porte se lit comme sa table de vérité. */
+    public static bool nand(bool a, bool b) {
+        return a nand b;
+    }
+
+    public static bool xnor(bool a, bool b) {
+        return a xnor b;
+    }
+
+    /** `not` lie plus lâche que `==` : ceci vaut `not (a == b)`. */
+    public static bool differents(i32 a, i32 b) {
+        return not a == b;
+    }
+
+    /** Une précondition se lit comme une implication. */
+    public static bool valide(i32 age, bool consentement) {
+        return age >= 18 implies consentement;
+    }
+
+    public static void main(String[] args) {
+        for (var a : new bool[]{false, true}) {
+            for (var b : new bool[]{false, true}) {
+                System.out.println(
+                    "a={:<5} b={:<5} | and={:<5} or={:<5} xor={:<5} nand={:<5} nor={:<5} xnor={:<5} implies={}",
+                    a, b,
+                    a and b,
+                    a or b,
+                    a xor b,
+                    a nand b,
+                    a nor b,
+                    a xnor b,
+                    a implies b);
+            }
+        }
+
+        var age = 20;
+        var consentement = false;
+        unless (Logic.valide(age, consentement)) {
+            System.out.println("règle violée : {} ans sans consentement", age);
+        } else unless (age >= 18) {
+            System.out.println("mineur");
+        } else {
+            System.out.println("ok");
+        }
+    }
+}

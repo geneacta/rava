@@ -1,0 +1,72 @@
+package examples;
+
+import std.collections.HashMap;
+
+/** Tour d'horizon : c'est du Rust, écrit avec la syntaxe de Java. */
+public class Demo {
+
+    /** Durées de vie explicites : `@Lifetime` déclare, `@Ref("a")` emprunte. */
+    @Lifetime("a")
+    public static @Ref("a") str longest(@Ref("a") str a, @Ref("a") str b) {
+        unless (a.len() > b.len()) {
+            return b;
+        }
+        return a;
+    }
+
+    /** `Result` + opérateur `?` (écrit `.q()` en Java strict). */
+    public static Result<i32, String> parseAndDouble(@Ref str s) {
+        var n = s.parse::<i32>().map_err(e -> Macro.format("{:?}", e)).q();
+        return Ok(n * 2);
+    }
+
+    /** Générique borné : `extends` devient une borne de trait. */
+    public static <T extends Clone> T[] duplicate(@Ref T value, usize n) {
+        @Mut var out = new T[]{};
+        for (var i : Range.of(0, n)) {
+            out.push(value.clone());
+        }
+        return out;
+    }
+
+    public static void main(String[] args) {
+        System.out.println("le plus long : {}", Demo.longest("court", "beaucoup plus long"));
+
+        switch (Demo.parseAndDouble("21")) {
+            case Ok(var v) -> System.out.println("ok : {}", v);
+            case Err(var e) -> System.out.println("err : {}", e);
+        }
+
+        @Mut HashMap<String, i32> scores = HashMap.new();
+        scores.insert("alice".to_string(), 30);
+        scores.insert("bob".to_string(), 12);
+
+        @Mut var names = new String[]{};
+        for (@Ref var entry : scores) {
+            names.push(entry);
+        }
+
+        // `else unless` : la chaîne se lit comme un `else if` inversé.
+        var total = scores.len();
+        if (total == 0) {
+            System.out.println("aucun score");
+        } else unless (total > 5) {
+            System.out.println("{} score(s), c'est peu", total);
+        } else {
+            System.out.println("{} scores", total);
+        }
+
+        var doubled = Demo.duplicate(Ref.of(7), 3);
+        System.out.println("dupliqué : {:?}", doubled);
+
+        // Boucle avec `continue` : le pas d'itération reste exécuté.
+        @Mut var pairs = 0;
+        for (@Mut var i = 0; i < 10; i++) {
+            unless (i % 2 == 0) {
+                continue;
+            }
+            pairs += 1;
+        }
+        System.out.println("pairs = {}", pairs);
+    }
+}

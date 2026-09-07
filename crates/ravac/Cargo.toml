@@ -1,0 +1,17 @@
+[package]
+name = "ravac"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rava compiler: Java syntax, Rust semantics. Transpiles .rava to Rust."
+
+[[bin]]
+name = "ravac"
+path = "src/main.rs"
+
+[dependencies]
+rava-ast.workspace = true
+rava-lexer.workspace = true
+rava-parser.workspace = true
+rava-codegen.workspace = true

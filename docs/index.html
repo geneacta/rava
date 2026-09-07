@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rava — Rust, écrit avec la syntaxe de Java</title>
+<meta name="description" content="Rava, c'est Rust tel quel, avec la syntaxe de Java. Parcours « je viens de Java » et « je viens de Rust ».">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fbfaf8;
+  --bg-soft: #f2efe9;
+  --panel: #ffffff;
+  --ink: #1c1a17;
+  --ink-soft: #5c574f;
+  --ink-faint: #8b857a;
+  --line: #e2ddd3;
+  --accent: #b0451f;
+  --accent-soft: #f6e5dd;
+  --java: #2b6cb0;
+  --java-soft: #e3eefa;
+  --rust: #b0451f;
+  --rust-soft: #f6e5dd;
+  --code-bg: #f5f2ec;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+  --serif: ui-serif, Georgia, "Iowan Old Style", serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14130f;
+    --bg-soft: #1b1a15;
+    --panel: #1e1d18;
+    --ink: #ece7dd;
+    --ink-soft: #a9a294;
+    --ink-faint: #7d766a;
+    --line: #302e27;
+    --accent: #e2794c;
+    --accent-soft: #33221a;
+    --java: #77aee8;
+    --java-soft: #1a2532;
+    --rust: #e2794c;
+    --rust-soft: #33221a;
+    --code-bg: #191813;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14130f; --bg-soft: #1b1a15; --panel: #1e1d18; --ink: #ece7dd;
+  --ink-soft: #a9a294; --ink-faint: #7d766a; --line: #302e27; --accent: #e2794c;
+  --accent-soft: #33221a; --java: #77aee8; --java-soft: #1a2532; --rust: #e2794c;
+  --rust-soft: #33221a; --code-bg: #191813;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--sans); font-size: 16px; line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+a { color: var(--accent); }
+
+/* ---------------------------------------------------------------- header */
+header {
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--bg-soft), var(--bg));
+}
+.masthead { padding: 72px 0 56px; }
+.logo {
+  font-family: var(--mono); font-size: 13px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--ink-faint); margin-bottom: 20px;
+}
+h1 {
+  font-family: var(--serif); font-weight: 600; font-size: clamp(34px, 6vw, 54px);
+  line-height: 1.1; margin: 0 0 18px; letter-spacing: -.02em;
+}
+h1 .hl { color: var(--accent); }
+.lede { font-size: clamp(17px, 2.2vw, 20px); color: var(--ink-soft); max-width: 62ch; margin: 0 0 28px; }
+.lede strong { color: var(--ink); font-weight: 600; }
+
+.pipeline {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 13px; color: var(--ink-soft);
+  padding: 14px 18px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); width: fit-content; max-width: 100%;
+}
+.pipeline b { color: var(--ink); font-weight: 600; }
+.pipeline .arrow { color: var(--ink-faint); }
+.pipeline .tag {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-faint); padding: 2px 7px; border: 1px solid var(--line); border-radius: 20px;
+}
+
+/* ---------------------------------------------------------------- tracks */
+.tracks { padding: 56px 0 0; }
+.tracks h2 { font-family: var(--serif); font-size: 26px; margin: 0 0 6px; font-weight: 600; }
+.tracks .sub { color: var(--ink-soft); margin: 0 0 26px; }
+
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 34px; }
+@media (max-width: 640px) { .tabs { grid-template-columns: 1fr; } }
+.tab {
+  text-align: left; cursor: pointer; font: inherit;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  padding: 18px 20px; color: var(--ink); transition: border-color .15s, background .15s;
+}
+.tab:hover { border-color: var(--ink-faint); }
+.tab .from { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); }
+.tab .name { font-size: 19px; font-weight: 600; margin: 6px 0 4px; }
+.tab .why { font-size: 14px; color: var(--ink-soft); line-height: 1.5; }
+.tab[aria-selected="true"] { border-color: transparent; box-shadow: inset 0 0 0 2px currentColor; }
+#tab-java[aria-selected="true"] { color: var(--java); background: var(--java-soft); }
+#tab-rust[aria-selected="true"] { color: var(--rust); background: var(--rust-soft); }
+.tab[aria-selected="true"] .name, .tab[aria-selected="true"] .why { color: var(--ink); }
+
+/* ---------------------------------------------------------------- content */
+section.panel { padding-bottom: 40px; }
+h3 {
+  font-family: var(--serif); font-size: 23px; font-weight: 600;
+  margin: 46px 0 4px; letter-spacing: -.01em;
+}
+h3:first-of-type { margin-top: 8px; }
+h3 .num {
+  font-family: var(--mono); font-size: 12px; color: var(--ink-faint);
+  display: block; letter-spacing: .12em; margin-bottom: 6px; font-weight: 400;
+}
+p { margin: 10px 0 16px; color: var(--ink-soft); max-width: 70ch; }
+p strong, li strong { color: var(--ink); font-weight: 600; }
+ul { color: var(--ink-soft); max-width: 70ch; padding-left: 20px; }
+li { margin: 6px 0; }
+
+code {
+  font-family: var(--mono); font-size: .88em;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+pre {
+  margin: 0; padding: 16px 18px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
+  font-family: var(--mono); font-size: 13.5px; line-height: 1.6;
+}
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0 24px; }
+@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+.pair figure { margin: 0; min-width: 0; }
+.pair figcaption {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-faint); margin-bottom: 7px;
+}
+.pair .rava figcaption { color: var(--java); }
+.pair .rust figcaption { color: var(--rust); }
+
+table { border-collapse: collapse; width: 100%; margin: 18px 0 24px; font-size: 14.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; }
+td:first-child { white-space: nowrap; }
+.scroll { overflow-x: auto; }
+
+.callout {
+  border-left: 3px solid var(--accent); background: var(--accent-soft);
+  padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 20px 0;
+}
+.callout p { margin: 0; color: var(--ink); }
+.callout .label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 4px;
+}
+
+.steps { counter-reset: s; list-style: none; padding: 0; }
+.steps > li {
+  counter-increment: s; position: relative; padding-left: 40px; margin: 22px 0;
+}
+.steps > li::before {
+  content: counter(s); position: absolute; left: 0; top: 1px;
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--panel); border: 1px solid var(--line);
+  font-family: var(--mono); font-size: 12px; color: var(--ink-soft);
+}
+.steps > li > b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 2px; }
+
+footer { border-top: 1px solid var(--line); margin-top: 60px; padding: 34px 0 60px; }
+.doclinks { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 26px; }
+.doclinks a {
+  display: block; text-decoration: none; color: inherit;
+  border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--panel);
+}
+.doclinks a:hover { border-color: var(--ink-faint); }
+.doclinks .t { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.doclinks .d { font-size: 13.5px; color: var(--ink-soft); margin-top: 3px; line-height: 1.45; }
+footer .fine { font-size: 13px; color: var(--ink-faint); }
+
+/* coloration minimale */
+.k { color: var(--accent); }
+.c { color: var(--ink-faint); font-style: italic; }
+.s { color: #2f7a4f; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .s { color: #7fc79b; } }
+:root[data-theme="dark"] .s { color: #7fc79b; }
+.a { color: var(--java); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap masthead">
+    <div class="logo">geneacta / rava</div>
+    <h1>Rust, écrit avec la<br>syntaxe de <span class="hl">Java</span>.</h1>
+    <p class="lede">
+      Rava ne réinvente rien. Les types, la propriété, l'emprunt, les durées de vie,
+      les traits, <code>Option</code>, <code>Result</code>, <code>Send</code> et <code>Sync</code>
+      sont <strong>exactement ceux de Rust</strong>. Seule la syntaxe change : on écrit des classes,
+      des interfaces, des <code>switch</code> et des annotations.
+    </p>
+    <div class="pipeline">
+      <b>fichier.rava</b> <span class="arrow">──▶</span> <span class="tag">ravac · syntaxe</span>
+      <span class="arrow">──▶</span> <b>fichier.rs</b> <span class="arrow">──▶</span>
+      <span class="tag">rustc · sémantique</span> <span class="arrow">──▶</span> <b>binaire</b>
+    </div>
+  </div>
+</header>
+
+<main class="wrap tracks">
+  <h2>Par où commencer</h2>
+  <p class="sub">Deux chemins vers la même langue. Choisissez celui d'où vous venez.</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tab-java" role="tab" aria-selected="true" aria-controls="panel-java">
+      <span class="from">Parcours 1</span>
+      <span class="name">Je viens de Java ☕</span>
+      <span class="why">La syntaxe vous est déjà familière. Ce qui change, c'est ce que le compilateur exige de vous — et ce qu'il vous rend en échange.</span>
+    </button>
+    <button class="tab" id="tab-rust" role="tab" aria-selected="false" aria-controls="panel-rust">
+      <span class="from">Parcours 2</span>
+      <span class="name">Je viens de Rust 🦀</span>
+      <span class="why">Vous connaissez déjà la sémantique — elle est identique. Il ne reste qu'un dictionnaire de formes à apprendre.</span>
+    </button>
+  </div>
+
+  <!-- ============================================================ JAVA -->
+  <section class="panel" id="panel-java" role="tabpanel" aria-labelledby="tab-java">
+
+    <h3><span class="num">Le principe</span>Votre syntaxe, un autre contrat</h3>
+    <p>
+      Vous écrivez des classes, des interfaces, des méthodes, des <code>switch</code>.
+      Rien à désapprendre de ce côté. Ce qui change, c'est que le compilateur
+      <strong>ne vous laissera plus mentir sur la mémoire</strong> : qui possède quoi,
+      qui a le droit de modifier, jusqu'à quand une référence est valide.
+    </p>
+    <p>
+      En échange, il n'y a plus de <code>NullPointerException</code>, plus de
+      <code>ConcurrentModificationException</code>, plus de fuite par référence oubliée,
+      et pas de ramasse-miettes.
+    </p>
+
+    <h3><span class="num">Étape 1</span>Ce qui disparaît</h3>
+    <p>Quatre habitudes Java n'ont aucun équivalent. Rava les refuse, avec un message qui dit quoi écrire à la place.</p>
+    <div class="scroll"><table>
+      <tr><th>Vous écriviez</th><th>Vous écrirez</th><th>Pourquoi</th></tr>
+      <tr><td><code>null</code></td><td><code>Option&lt;T&gt;</code></td><td>l'absence devient un cas du type, pas une bombe</td></tr>
+      <tr><td><code>try / catch / throw</code></td><td><code>Result&lt;T, E&gt;</code> + <code>.q()</code></td><td>l'échec est une valeur de retour, visible dans la signature</td></tr>
+      <tr><td><code>class A extends B</code></td><td>composition + <code>interface</code></td><td>pas de sous-typage entre structures</td></tr>
+      <tr><td><code>instanceof</code></td><td><code>switch</code> sur une <code>enum</code></td><td>les cas sont fermés et vérifiés à la compilation</td></tr>
+    </table></div>
+
+    <div class="pair">
+      <figure class="rava"><figcaption>Java — ce qui compile mais explose</figcaption><pre><code><span class="k">public</span> String nom(Compte c) {
+    <span class="k">return</span> c.getTitulaire().toUpperCase();
+    <span class="c">// NPE si le titulaire est null</span>
+}</code></pre></figure>
+      <figure class="rust"><figcaption>Rava — le cas manquant est dans le type</figcaption><pre><code><span class="k">public</span> String nom(<span class="a">@Ref</span> Compte c) {
+    <span class="k">return switch</span> (c.titulaire()) {
+        <span class="k">case</span> Some(<span class="k">var</span> t) -&gt; t.to_uppercase();
+        <span class="k">case</span> None -&gt; <span class="s">"(inconnu)"</span>.to_string();
+    };
+}</code></pre></figure>
+    </div>
+
+    <h3><span class="num">Étape 2</span>Le seul concept vraiment neuf : la propriété</h3>
+    <p>
+      En Java, toute variable est une référence et le ramasse-miettes tranche.
+      En Rava, <strong>chaque valeur a un propriétaire unique</strong>. Passer une valeur, c'est
+      soit la <em>donner</em>, soit la <em>prêter</em>. Ce choix s'écrit avec une annotation.
+    </p>
+    <div class="scroll"><table>
+      <tr><th>Écriture</th><th>Signification</th><th>Ce que vous pouvez faire</th></tr>
+      <tr><td><code>String s</code></td><td>on vous donne la valeur</td><td>tout, y compris la détruire — l'appelant l'a perdue</td></tr>
+      <tr><td><code>@Ref String s</code></td><td>on vous prête en lecture</td><td>lire ; plusieurs prêts simultanés possibles</td></tr>
+      <tr><td><code>@Ref @Mut String s</code></td><td>on vous prête en écriture</td><td>modifier ; un seul prêt à la fois</td></tr>
+    </table></div>
+    <p>Sur une méthode, la même idée s'applique au receveur :</p>
+    <div class="pair">
+      <figure class="rava"><figcaption>Rava</figcaption><pre><code><span class="k">public class</span> Panier {
+    <span class="k">private</span> Vec&lt;String&gt; articles;
+
+    <span class="c">// lecture seule</span>
+    <span class="k">public</span> usize taille() {
+        <span class="k">return this</span>.articles.len();
+    }
+
+    <span class="c">// modification en place</span>
+    <span class="a">@Mut</span>
+    <span class="k">public void</span> ajouter(String a) {
+        <span class="k">this</span>.articles.push(a);
+    }
+
+    <span class="c">// consomme le panier</span>
+    <span class="a">@Owned</span>
+    <span class="k">public</span> Vec&lt;String&gt; vider() {
+        <span class="k">return this</span>.articles;
+    }
+}</code></pre></figure>
+      <figure class="rust"><figcaption>Rust généré</figcaption><pre><code><span class="k">pub struct</span> Panier {
+    articles: Vec&lt;String&gt;,
+}
+
+<span class="k">impl</span> Panier {
+
+    <span class="k">pub fn</span> taille(<span class="k">&amp;self</span>) -&gt; usize {
+        <span class="k">return self</span>.articles.len();
+    }
+
+
+    <span class="k">pub fn</span> ajouter(<span class="k">&amp;mut self</span>, a: String) {
+        <span class="k">self</span>.articles.push(a);
+    }
+
+
+    <span class="k">pub fn</span> vider(<span class="k">self</span>) -&gt; Vec&lt;String&gt; {
+        <span class="k">return self</span>.articles;
+    }
+}</code></pre></figure>
+    </div>
+    <div class="callout">
+      <span class="label">Le réflexe</span>
+      <p>Par défaut, une méthode emprunte en lecture. Ajoutez <code>@Mut</code> quand elle modifie,
+      <code>@Owned</code> quand elle consomme. Si vous vous trompez, <code>rustc</code> vous le dira — dans les termes de Rust.</p>
+    </div>
+
+    <h3><span class="num">Étape 3</span>Le <code>switch</code> devient un vrai filtrage</h3>
+    <p>
+      La forme flèche que vous connaissez (Java 14+) devient le <code>match</code> de Rust :
+      elle déconstruit les valeurs, accepte des gardes, et le compilateur exige que
+      <strong>tous les cas soient couverts</strong>.
+    </p>
+    <pre><code><span class="k">var</span> libelle = <span class="k">switch</span> (msg) {
+    <span class="k">case</span> Message.Quitter                          -&gt; <span class="s">"fin"</span>;
+    <span class="k">case</span> Message.Bouger(<span class="k">var</span> x, <span class="k">var</span> y) <span class="k">when</span> x == y -&gt; <span class="s">"diagonale"</span>;
+    <span class="k">case</span> Message.Bouger(<span class="k">var</span> x, <span class="k">var</span> y)            -&gt; <span class="s">"déplacement"</span>;
+    <span class="k">case</span> <span class="s">1</span> ... <span class="s">5</span>                                 -&gt; <span class="s">"petit"</span>;
+    <span class="k">default</span>                                       -&gt; <span class="s">"autre"</span>;
+};</code></pre>
+    <p>Oubliez un cas : le programme ne compile pas. C'est la différence entre un <code>switch</code> et un filtrage.</p>
+
+    <h3><span class="num">Étape 4</span>Deux commodités que Java n'a pas</h3>
+    <p>Rava ajoute <code>unless</code> et les opérateurs logiques en toutes lettres, parce qu'une condition se lit mieux qu'elle ne se déchiffre.</p>
+    <div class="pair">
+      <figure class="rava"><figcaption>Rava</figcaption><pre><code><span class="k">unless</span> (montant &lt;= solde) {
+    <span class="k">return</span> Err(<span class="s">"solde insuffisant"</span>);
+}
+
+<span class="k">if</span> (a) { ... }
+<span class="k">else unless</span> (b) { ... }
+<span class="k">else</span> { ... }
+
+<span class="k">if</span> (age &gt;= <span class="s">18</span> <span class="k">implies</span> consentement) { ... }
+<span class="k">if</span> (actif <span class="k">and not</span> banni) { ... }
+<span class="k">if</span> (a <span class="k">nand</span> b) { ... }</code></pre></figure>
+      <figure class="rust"><figcaption>Rust généré</figcaption><pre><code><span class="k">if</span> montant &gt; solde {
+    <span class="k">return</span> Err(<span class="s">"solde insuffisant"</span>);
+}
+
+<span class="k">if</span> a { ... }
+<span class="k">else if</span> !b { ... }
+<span class="k">else</span> { ... }
+
+<span class="k">if</span> !(age &gt;= <span class="s">18</span>) || consentement { ... }
+<span class="k">if</span> actif &amp;&amp; !banni { ... }
+<span class="k">if</span> !(a &amp;&amp; b) { ... }</code></pre></figure>
+    </div>
+    <p>
+      Huit mots réservés : <code>and</code>, <code>or</code>, <code>xor</code>, <code>nand</code>,
+      <code>nor</code>, <code>xnor</code>, <code>implies</code>, <code>not</code>.
+      Précédence logique classique — <code>implies</code> le plus lâche, <code>not</code> le plus serré —
+      et <code>ravac</code> parenthèse ce qu'il faut pour que le sens écrit soit le sens compilé.
+    </p>
+
+    <h3><span class="num">Étape 5</span>Votre premier programme</h3>
+    <ol class="steps">
+      <li><b>Écrivez un <code>.rava</code></b>
+        Une classe, un <code>public static void main(String[] args)</code>, et <code>System.out.println("{}", x)</code> — le format est celui de Rust.</li>
+      <li><b><code>ravac emit Mon.rava</code></b>
+        Lisez le Rust produit. C'est le meilleur cours de Rust disponible : votre propre code, traduit.</li>
+      <li><b><code>ravac run Mon.rava</code></b>
+        Compile avec <code>rustc</code> et exécute. Les erreurs qui remontent sont celles de Rust.</li>
+      <li><b>Quand ça coince</b>
+        Lisez <a href="https://github.com/geneacta/rava/blob/main/docs/IMPOSSIBLE.md">IMPOSSIBLE.md</a> : si la construction y figure, ce n'est pas vous, c'est Rust qui ne le fait pas.</li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ RUST -->
+  <section class="panel" id="panel-rust" role="tabpanel" aria-labelledby="tab-rust" hidden>
+
+    <h3><span class="num">Le principe</span>Rien à réapprendre, un dictionnaire à lire</h3>
+    <p>
+      La sémantique est <strong>identique</strong> : <code>ravac</code> ne fait aucune analyse.
+      Il traduit des formes et passe le résultat à <code>rustc</code>. Vos réflexes de propriété,
+      d'emprunt et de durée de vie sont exactement les bons.
+    </p>
+    <p>
+      La question n'est donc jamais « est-ce que ça marche pareil ? » — oui — mais
+      « comment ça s'écrit ? ». Voici le dictionnaire.
+    </p>
+
+    <h3><span class="num">Dictionnaire 1</span>Items</h3>
+    <div class="scroll"><table>
+      <tr><th>Rust</th><th>Rava</th></tr>
+      <tr><td><code>struct C { x: i32 }</code></td><td><code>class C { i32 x; }</code></td></tr>
+      <tr><td><code>impl C { … }</code></td><td>le corps de la classe</td></tr>
+      <tr><td><code>trait T { … }</code></td><td><code>interface T { … }</code></td></tr>
+      <tr><td><code>trait T: A + B</code></td><td><code>interface T extends A, B</code></td></tr>
+      <tr><td><code>impl T for C</code></td><td><code>class C implements T</code> + <code>@Override</code> sur les méthodes</td></tr>
+      <tr><td><code>enum E { A, B(i32) }</code></td><td><code>enum E { A, B(i32 v) }</code></td></tr>
+      <tr><td><code>E::B { x: i32 }</code> (variante nommée)</td><td><code>@Struct B(i32 x)</code></td></tr>
+      <tr><td><code>type Item;</code></td><td><code>type Item;</code> dans l'interface, <code>type Item = i32;</code> dans la classe qui implémente</td></tr>
+      <tr><td><code>const MAX: i32 = 100;</code></td><td><code>static final i32 MAX = 100;</code></td></tr>
+      <tr><td><code>fn new(…) -&gt; Self</code></td><td>le constructeur <code>C(…)</code></td></tr>
+      <tr><td><code>fn with_capacity(…) -&gt; Self</code></td><td>2<sup>e</sup> constructeur + <code>@Named("with_capacity")</code></td></tr>
+      <tr><td><code>#[derive(Debug, Clone)]</code></td><td><code>@Derive({"Debug", "Clone"})</code></td></tr>
+      <tr><td><code>pub</code> / <code>pub(crate)</code> / privé</td><td><code>public</code> / <code>protected</code> / <code>private</code></td></tr>
+    </table></div>
+
+    <h3><span class="num">Dictionnaire 2</span>Types, emprunts, durées de vie</h3>
+    <div class="scroll"><table>
+      <tr><th>Rust</th><th>Rava</th></tr>
+      <tr><td><code>&amp;T</code></td><td><code>@Ref T</code></td></tr>
+      <tr><td><code>&amp;mut T</code></td><td><code>@Ref @Mut T</code></td></tr>
+      <tr><td><code>&amp;'a T</code></td><td><code>@Ref("a") T</code></td></tr>
+      <tr><td><code>&amp;self</code> / <code>&amp;mut self</code> / <code>self</code></td><td>défaut / <code>@Mut</code> / <code>@Owned</code></td></tr>
+      <tr><td><code>fn f&lt;'a, 'b: 'a&gt;()</code></td><td><code>@Lifetime({"a", "b: a"})</code></td></tr>
+      <tr><td><code>&lt;T: Display + Clone&gt;</code></td><td><code>&lt;T extends Display &amp; Clone&gt;</code></td></tr>
+      <tr><td><code>where T: Into&lt;String&gt;</code></td><td><code>@Where("T: Into&lt;String&gt;")</code></td></tr>
+      <tr><td><code>&lt;const N: usize&gt;</code></td><td><code>&lt;@Const usize N&gt;</code></td></tr>
+      <tr><td><code>dyn Trait</code> / <code>impl Trait</code></td><td><code>@Dyn Trait</code> / <code>@Impl Trait</code></td></tr>
+      <tr><td><code>Vec&lt;T&gt;</code> / <code>&amp;[T]</code></td><td><code>T[]</code> / <code>@Ref T[]</code></td></tr>
+      <tr><td><code>(A, B)</code></td><td><code>Tuple&lt;A, B&gt;</code></td></tr>
+      <tr><td><code>()</code></td><td><code>void</code> (retour) ou <code>Unit</code> (type)</td></tr>
+      <tr><td><code>Fn(A, B) -&gt; R</code></td><td><code>Fn2&lt;A, B, R&gt;</code></td></tr>
+      <tr><td><code>*const T</code> / <code>*mut T</code></td><td><code>@Ptr("const") T</code> / <code>@Ptr("mut") T</code></td></tr>
+      <tr><td><code>i32</code>, <code>u64</code>, <code>usize</code>, <code>f64</code>, <code>str</code>…</td><td>identiques — et <code>int</code>/<code>long</code>/<code>double</code> en alias</td></tr>
+    </table></div>
+
+    <h3><span class="num">Dictionnaire 3</span>Expressions et instructions</h3>
+    <div class="scroll"><table>
+      <tr><th>Rust</th><th>Rava</th></tr>
+      <tr><td><code>let x = e;</code> / <code>let mut x = e;</code></td><td><code>var x = e;</code> / <code>@Mut var x = e;</code></td></tr>
+      <tr><td><code>match e { … }</code></td><td><code>switch (e) { case … -&gt; …; }</code></td></tr>
+      <tr><td><code>P if garde =&gt;</code></td><td><code>case P when garde -&gt;</code></td></tr>
+      <tr><td><code>A | B =&gt;</code></td><td><code>case A, B -&gt;</code></td></tr>
+      <tr><td><code>1..=5 =&gt;</code></td><td><code>case 1 ... 5 -&gt;</code></td></tr>
+      <tr><td><code>Point { x: a, .. } =&gt;</code></td><td><code>case Point(x = var a, ...) -&gt;</code></td></tr>
+      <tr><td><code>_ =&gt;</code></td><td><code>default -&gt;</code></td></tr>
+      <tr><td><code>loop { }</code></td><td><code>while (true) { }</code> ou <code>for (;;) { }</code></td></tr>
+      <tr><td><code>'a: loop { break 'a; }</code></td><td><code>a: while (true) { break a; }</code></td></tr>
+      <tr><td><code>for x in &amp;v</code></td><td><code>for (@Ref var x : v)</code></td></tr>
+      <tr><td><code>a..b</code> / <code>a..=b</code></td><td><code>Range.of(a, b)</code> / <code>Range.closed(a, b)</code></td></tr>
+      <tr><td><code>&amp;x</code> / <code>&amp;mut x</code> / <code>*p</code></td><td><code>Ref.of(x)</code> / <code>Ref.mut_(x)</code> / <code>Deref.of(p)</code></td></tr>
+      <tr><td><code>e?</code></td><td><code>e.q()</code> — ou <code>e?</code>, accepté aussi</td></tr>
+      <tr><td><code>e.await</code></td><td><code>e.await()</code> — ou <code>e.await</code></td></tr>
+      <tr><td><code>async fn</code></td><td><code>@Async</code></td></tr>
+      <tr><td><code>unsafe fn</code> / <code>unsafe { }</code></td><td><code>@Unsafe</code> / <code>@Unsafe { }</code></td></tr>
+      <tr><td><code>move |x| …</code></td><td><code>Move.of(x -&gt; …)</code></td></tr>
+      <tr><td><code>|a, b| a + b</code></td><td><code>(a, b) -&gt; a + b</code></td></tr>
+      <tr><td><code>Point { x: 1, ..base }</code></td><td><code>new Point() { x = 1, ... base }</code></td></tr>
+      <tr><td><code>vec![1, 2, 3]</code></td><td><code>new int[]{1, 2, 3}</code></td></tr>
+      <tr><td><code>println!("{}", x)</code></td><td><code>System.out.println("{}", x)</code></td></tr>
+      <tr><td>n'importe quelle macro <code>m!(…)</code></td><td><code>Macro.m(…)</code></td></tr>
+      <tr><td><code>x.parse::&lt;i32&gt;()</code></td><td><code>x.&lt;i32&gt;parse()</code> — ou le turbofish, accepté aussi</td></tr>
+      <tr><td><code>#[attr]</code></td><td><code>@Attr("attr")</code></td></tr>
+      <tr><td>du Rust que rien ne couvre</td><td><code>@Rust("…")</code>, <code>Rust.expr("…")</code></td></tr>
+    </table></div>
+
+    <h3><span class="num">Dictionnaire 4</span>Ce que Rava ajoute</h3>
+    <p>Trois formes n'existent pas en Rust. Elles se désucrent à la traduction, sans coût.</p>
+    <div class="scroll"><table>
+      <tr><th>Rava</th><th>Rust généré</th></tr>
+      <tr><td><code>unless (c) { }</code></td><td><code>if !c { }</code> — avec inversion de l'opérateur : <code>unless (x &gt; 0)</code> donne <code>if x &lt;= 0</code></td></tr>
+      <tr><td><code>else unless (c) { }</code></td><td><code>else if !c { }</code></td></tr>
+      <tr><td><code>a and b</code> · <code>a or b</code> · <code>a xor b</code></td><td><code>a &amp;&amp; b</code> · <code>a || b</code> · <code>a ^ b</code></td></tr>
+      <tr><td><code>a nand b</code> · <code>a nor b</code> · <code>a xnor b</code></td><td><code>!(a &amp;&amp; b)</code> · <code>!(a || b)</code> · <code>!(a ^ b)</code></td></tr>
+      <tr><td><code>a implies b</code></td><td><code>!a || b</code> — associatif à droite</td></tr>
+      <tr><td><code>not a</code></td><td><code>!a</code> — lie plus lâche que <code>==</code></td></tr>
+    </table></div>
+    <div class="callout">
+      <span class="label">Attention à la précédence</span>
+      <p>L'ordre des mots est celui de la logique (<code>implies</code> &lt; <code>or</code> &lt; <code>xor</code> &lt; <code>and</code> &lt; <code>not</code>),
+      pas celui des symboles Rust où <code>^</code> lie plus fort que <code>&amp;&amp;</code>. <code>ravac</code> parenthèse en conséquence :
+      <code>a xor b and c</code> produit <code>a ^ (b &amp;&amp; c)</code>.</p>
+    </div>
+
+    <h3><span class="num">Le piège</span>Les identifiants ne sont pas renommés</h3>
+    <p>
+      <code>camelCase</code> reste <code>camelCase</code> dans le Rust produit — le fichier généré
+      porte <code>#![allow(non_snake_case)]</code>. C'est délibéré : cela permet d'implémenter
+      un vrai trait Rust (<code>fmt</code>, <code>next</code>, <code>drop</code>) sans que le nom ne se déforme
+      en route. Nommez vos méthodes de trait comme Rust les attend.
+    </p>
+
+    <h3><span class="num">Ce qui manque</span>Les vraies limites</h3>
+    <p>
+      Deux zones sortent du cadre Java et passent par une échappatoire :
+      <code>Type::&lt;T&gt;::methode()</code> (mettez les arguments de type sur la déclaration),
+      et les tableaux de taille fixe littérale <code>[T; 3]</code> (utilisez un générique constant,
+      ou <code>@Rust</code>). Tout le reste de Rust a une forme Java.
+    </p>
+    <p>
+      La liste inverse — ce que <em>Java</em> sait faire et que Rava refuse — est dans
+      <a href="https://github.com/geneacta/rava/blob/main/docs/IMPOSSIBLE.md">IMPOSSIBLE.md</a>.
+      Elle ne vous surprendra pas : c'est la liste de ce que Rust ne fait pas.
+    </p>
+  </section>
+</main>
+
+<footer class="wrap">
+  <div class="doclinks">
+    <a href="https://github.com/geneacta/rava/blob/main/docs/IMPOSSIBLE.md">
+      <div class="t">IMPOSSIBLE.md</div>
+      <div class="d">Ce que Rava ne fera pas, et quoi écrire à la place.</div>
+    </a>
+    <a href="https://github.com/geneacta/rava/blob/main/docs/SYNTAX.md">
+      <div class="t">SYNTAX.md</div>
+      <div class="d">La table de correspondance Java ↔ Rust, complète.</div>
+    </a>
+    <a href="https://github.com/geneacta/rava/blob/main/docs/ANNOTATIONS.md">
+      <div class="t">ANNOTATIONS.md</div>
+      <div class="d">Référence des annotations : emprunts, durées de vie, attributs.</div>
+    </a>
+    <a href="https://github.com/geneacta/rava">
+      <div class="t">geneacta/rava</div>
+      <div class="d">Le dépôt, les exemples, le compilateur <code>ravac</code>.</div>
+    </a>
+  </div>
+  <p class="fine">Rava — Rust tel quel, avec la syntaxe de Java. Licence Apache 2.0.</p>
+</footer>
+
+<script>
+(function () {
+  var tabs = [
+    { btn: document.getElementById('tab-java'), panel: document.getElementById('panel-java'), id: 'java' },
+    { btn: document.getElementById('tab-rust'), panel: document.getElementById('panel-rust'), id: 'rust' }
+  ];
+
+  function select(id, push) {
+    tabs.forEach(function (t) {
+      var on = t.id === id;
+      t.btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.panel.hidden = !on;
+    });
+    try { localStorage.setItem('rava-track', id); } catch (e) {}
+    if (push && location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+  }
+
+  tabs.forEach(function (t) {
+    t.btn.addEventListener('click', function () {
+      select(t.id, true);
+      t.panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  var initial = (location.hash || '').replace('#', '');
+  if (initial !== 'java' && initial !== 'rust') {
+    try { initial = localStorage.getItem('rava-track') || 'java'; } catch (e) { initial = 'java'; }
+  }
+  select(initial === 'rust' ? 'rust' : 'java', false);
+})();
+</script>
+</body>
+</html>

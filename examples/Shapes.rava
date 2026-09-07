@@ -1,0 +1,68 @@
+package examples;
+
+import std.fmt.Display;
+
+/** Un trait Rust s'écrit comme une interface Java. */
+public interface Shape {
+    double area();
+
+    /** Méthode par défaut : elle a un corps, comme en Rust. */
+    default boolean isBig() {
+        unless (this.area() >= 100.0) {
+            return false;
+        }
+        return true;
+    }
+}
+
+@Derive({"Debug", "Clone", "Copy"})
+public class Circle implements Shape {
+    private double radius;
+
+    public Circle(double radius) {
+        this.radius = radius;
+    }
+
+    @Override
+    public double area() {
+        return 3.14159265358979 * this.radius * this.radius;
+    }
+
+    /// Emprunt mutable : `@Mut` sur la méthode, c'est `&mut self`.
+    @Mut
+    public void scale(double factor) {
+        this.radius *= factor;
+    }
+}
+
+@Derive({"Debug", "Clone", "Copy"})
+public class Rect implements Shape {
+    private double w;
+    private double h;
+
+    public Rect(double w, double h) {
+        this.w = w;
+        this.h = h;
+    }
+
+    @Override
+    public double area() {
+        return this.w * this.h;
+    }
+}
+
+/** Une enum Rust avec charge utile. */
+@Derive({"Debug"})
+public enum AnyShape {
+    Circle(Circle inner),
+    Rect(Rect inner),
+    Empty;
+
+    public double area() {
+        return switch (this) {
+            case AnyShape.Circle(var c) -> c.area();
+            case AnyShape.Rect(var r) -> r.area();
+            case AnyShape.Empty -> 0.0;
+        };
+    }
+}

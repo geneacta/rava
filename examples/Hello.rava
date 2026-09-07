@@ -1,0 +1,15 @@
+package examples;
+
+/** Le « hello world » de Rava : syntaxe Java, sémantique Rust. */
+public class Hello {
+
+    public static void main(String[] args) {
+        System.out.println("Bonjour, {} !", "Rava");
+
+        @Mut var total = 0;
+        for (var i : Range.of(1, 5)) {
+            total += i;
+        }
+        System.out.println("somme 1..5 = {}", total);
+    }
+}

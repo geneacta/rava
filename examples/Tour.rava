@@ -1,0 +1,107 @@
+package examples;
+
+/** Vérifie que chaque forme annoncée dans la documentation fonctionne vraiment. */
+@Derive({"Debug", "Clone", "PartialEq"})
+public enum Message {
+    Quitter,
+    Bouger(i32 x, i32 y),
+    @Struct Ecrire(String texte),
+}
+
+/** Un record : struct à champs publics, constructeur et accesseurs. */
+@Derive({"Debug", "Clone", "Copy", "PartialEq"})
+public record Point(i32 x, i32 y) {
+    public i32 somme() { return this.x + this.y; }
+}
+
+public interface Nommable {
+    type Cle;
+    static final usize LIMITE = 32;
+    String nom();
+    default bool anonyme() { return this.nom().is_empty(); }
+}
+
+public class Tour implements Nommable {
+    private String etiquette;
+
+    public Tour(String etiquette) {
+        this.etiquette = etiquette;
+    }
+
+    type Cle = String;
+
+    @Override(Nommable.class)
+    public String nom() { return this.etiquette.clone(); }
+
+    /** Filtrage complet : déconstruction, garde, alternative, intervalle, reste. */
+    public static String decrire(@Ref Message m) {
+        return switch (m) {
+            case Message.Quitter -> "fin".to_string();
+            case Message.Bouger(var x, var y) when x == y -> "diagonale".to_string();
+            case Message.Bouger(var x, var y) -> Macro.format("({}, {})", x, y);
+            case Message.Ecrire(texte = var t) -> t.clone();
+        };
+    }
+
+    public static String taille(i32 n) {
+        return switch (n) {
+            case 0 -> "zéro".to_string();
+            case 1, 2, 3 -> "petit".to_string();
+            case 4 ... 10 -> "moyen".to_string();
+            default -> "grand".to_string();
+        };
+    }
+
+    /** Boucle étiquetée, `break` avec étiquette. */
+    public static Tuple<usize, usize> premierCouple(@Ref i32[] xs, i32 cible) {
+        externe: while (true) {
+            for (var i : Range.of(0, xs.len())) {
+                for (var j : Range.of(0, xs.len())) {
+                    if (xs[i] + xs[j] == cible) {
+                        return Tuple.of(i, j);
+                    }
+                }
+            }
+            break externe;
+        }
+        return Tuple.of(0, 0);
+    }
+
+    /** Fermeture capturante, `impl Trait` en retour, générique constant. */
+    public static @Impl Fn1<i32, i32> ajouteur(i32 n) {
+        return Move.of(x -> x + n);
+    }
+
+    public static <@Const usize N> usize capacite() {
+        return N;
+    }
+
+    public static void main(String[] args) {
+        var p = new Point(3, 4);
+        var q = new Point() { x = 10, ... p };
+        System.out.println("{:?} {:?} somme={}", p, q, p.somme());
+
+        for (var m : new Message[]{
+                Message.Quitter,
+                Message.Bouger(2, 2),
+                Message.Bouger(1, 5),
+                new Message.Ecrire() { texte = "salut".to_string() }}) {
+            System.out.println("{}", Tour.decrire(Ref.of(m)));
+        }
+
+        for (var n : new i32[]{0, 2, 7, 99}) {
+            System.out.println("{} -> {}", n, Tour.taille(n));
+        }
+
+        var t = new Tour("phare".to_string());
+        System.out.println("nom={} anonyme={} limite={}", t.nom(), t.anonyme(), Tour.LIMITE);
+
+        var couple = Tour.premierCouple(Ref.of(new i32[]{1, 2, 3}), 5);
+        System.out.println("couple={:?}", couple);
+
+        var plus5 = Tour.ajouteur(5);
+        System.out.println("plus5(10)={}", plus5(10));
+
+        System.out.println("capacite={}", Tour.<8>capacite());
+    }
+}

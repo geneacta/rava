@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rava-ast",
+    "crates/rava-lexer",
+    "crates/rava-parser",
+    "crates/rava-codegen",
+    "crates/ravac",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/geneacta/rava"
+
+[workspace.dependencies]
+rava-ast = { path = "crates/rava-ast" }
+rava-lexer = { path = "crates/rava-lexer" }
+rava-parser = { path = "crates/rava-parser" }
+rava-codegen = { path = "crates/rava-codegen" }
