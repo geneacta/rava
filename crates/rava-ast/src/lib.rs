@@ -371,6 +371,9 @@ pub enum Stmt {
     Break(Option<Ident>, Option<Expr>, Span),
     Continue(Option<Ident>, Span),
     Block(Block),
+    /// Plusieurs instructions écrites d'un trait — `var a = 1, b = 2;` — et
+    /// qui, contrairement à `Block`, n'ouvrent **pas** de portée.
+    Group(Vec<Stmt>),
     /// `switch` statement (forme flèche uniquement) -> `match`.
     Switch(SwitchExpr),
     /// Bloc `unsafe { }` : `@Unsafe { }` en Rava.

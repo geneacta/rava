@@ -168,12 +168,21 @@ Le détail par éditeur — et l'extension VS Code — est dans
 
 ## Documentation
 
-| | |
+L'index complet est dans [docs/README.md](docs/README.md).
+
+| Écrire du Rava | |
 |---|---|
-| [**IMPOSSIBLE.md**](docs/IMPOSSIBLE.md) | Ce que Rava ne fera pas, et quoi écrire à la place |
+| [**IMPOSSIBLE.md**](docs/IMPOSSIBLE.md) | Ce que Rava ne fera pas, ce qui est masqué, et quoi écrire à la place |
 | [**SYNTAX.md**](docs/SYNTAX.md) | La table de correspondance Java ↔ Rust, complète |
 | [**ANNOTATIONS.md**](docs/ANNOTATIONS.md) | Référence des annotations |
 | [**PROJETS.md**](docs/PROJETS.md) | Paquets, `rava.toml`, arborescence générée |
+| [**GRAMMAIRE.md**](docs/GRAMMAIRE.md) | La grammaire complète, adossée à un test par production |
+
+| Travailler sur le compilateur | |
+|---|---|
+| [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) | Comment il est bâti, et pourquoi ainsi |
+| [**CONTRIBUTING.md**](CONTRIBUTING.md) | Construire, tester, ajouter ou refuser une construction |
+| [**CHANGELOG.md**](CHANGELOG.md) | L'histoire du projet |
 
 Site : parcours **« je viens de Java »** et **« je viens de Rust »** sur
 <https://geneacta.github.io/rava/>.
@@ -195,8 +204,13 @@ docs/                  documentation et site GitHub Pages
 ```
 
 ```sh
-cargo test        # unitaires + compilation de tous les exemples par rustc
+cargo test        # unitaires, grammaire, et compilation de tous les exemples par rustc
 ```
+
+Les tests les plus importants sont ceux qui empêchent la documentation de
+dériver : `crates/rava-parser/tests/grammaire.rs` exerce **une production de
+`GRAMMAIRE.md` par test**, et `crates/ravac/tests/` compile **chaque exemple du
+dépôt avec `rustc`**.
 
 ## Statut
 

@@ -1116,6 +1116,12 @@ impl Codegen {
                 self.close("}");
                 Ok(())
             }
+            Stmt::Group(v) => {
+                for s in v {
+                    self.stmt(s)?;
+                }
+                Ok(())
+            }
             Stmt::Unsafe(b, _) => {
                 self.open("unsafe {");
                 for s in &b.stmts {
@@ -1881,6 +1887,7 @@ fn stmt_span(s: &Stmt) -> Option<Span> {
         | Stmt::Continue(_, span)
         | Stmt::Unsafe(_, span) => *span,
         Stmt::Block(b) => b.span,
+        Stmt::Group(v) => return v.first().and_then(stmt_span),
         Stmt::Switch(sw) => sw.span,
         Stmt::Expr(e) => e.span(),
         Stmt::Empty => return None,
@@ -1891,6 +1898,7 @@ fn contains_continue(s: &Stmt) -> bool {
     match s {
         Stmt::Continue(..) => true,
         Stmt::Block(b) => b.stmts.iter().any(contains_continue),
+        Stmt::Group(v) => v.iter().any(contains_continue),
         Stmt::Unsafe(b, _) => b.stmts.iter().any(contains_continue),
         Stmt::If { then, otherwise, .. } => {
             contains_continue(then) || otherwise.as_deref().is_some_and(contains_continue)

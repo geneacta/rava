@@ -1087,15 +1087,17 @@ impl Parser {
         }
 
         // Déclaration locale ou expression : on tente la déclaration d'abord.
-        if let Some(s) = self.attempt(Self::local_decl) {
-            return Ok(s);
+        if let Some(mut v) = self.attempt(Self::local_decl) {
+            return Ok(if v.len() == 1 { v.remove(0) } else { Stmt::Group(v) });
         }
         let e = self.expr()?;
         self.expect_punct(";")?;
         Ok(Stmt::Expr(e))
     }
 
-    fn local_decl(&mut self) -> PResult<Stmt> {
+    /// Déclaration locale, éventuellement à plusieurs déclarateurs :
+    /// `var a = 1, b = 2;` produit deux instructions, sans portée nouvelle.
+    fn local_decl(&mut self) -> PResult<Vec<Stmt>> {
         let span = self.span();
         let annots = self.annots()?;
         let modifiers = self.modifiers();
@@ -1116,20 +1118,35 @@ impl Parser {
                     self.expect_punct("=")?;
                     let init = self.expr()?;
                     self.expect_punct(";")?;
-                    return Ok(Stmt::LocalPattern { annots, pat, init, span });
+                    return Ok(vec![Stmt::LocalPattern { annots, pat, init, span }]);
                 }
                 // Simple identifiant : c'est une déclaration ordinaire, on rembobine.
                 _ => self.i = save,
             }
         }
 
-        let name = self.expect_ident()?;
-        let init = if self.eat_punct("=") { Some(self.expr()?) } else { None };
+        let mut out = Vec::new();
+        loop {
+            let name = self.expect_ident()?;
+            let init = if self.eat_punct("=") { Some(self.expr()?) } else { None };
+            out.push(Stmt::Local {
+                annots: annots.clone(),
+                modifiers: modifiers.clone(),
+                ty: ty.clone(),
+                name,
+                init,
+                span,
+            });
+            if self.eat_punct(",") {
+                continue;
+            }
+            break;
+        }
         if !self.tok().is_punct(";") {
             return self.err("`;` attendu");
         }
         self.bump();
-        Ok(Stmt::Local { annots, modifiers, ty, name, init, span })
+        Ok(out)
     }
 
     fn for_stmt(&mut self, label: Option<Ident>, span: Span) -> PResult<Stmt> {
@@ -1166,7 +1183,7 @@ impl Parser {
         let mut init = Vec::new();
         if !self.tok().is_punct(";") {
             if let Some(d) = self.attempt(Self::local_decl) {
-                init.push(d);
+                init.extend(d);
             } else {
                 loop {
                     init.push(Stmt::Expr(self.expr()?));
