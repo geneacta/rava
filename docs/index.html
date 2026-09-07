@@ -424,7 +424,28 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
   = ligne 8 : immutable borrow occurs here
   = ligne 11 : immutable borrow later used here</code></pre>
 
-    <h3><span class="num">Étape 6</span>Votre premier programme</h3>
+    <h3><span class="num">Étape 6</span>Un projet, pas un fichier</h3>
+    <p>
+      Dès qu'il y a plusieurs fichiers, la structure vous sera familière : le répertoire
+      fait foi, et <strong>le paquet est le seul espace de noms</strong> — deux fichiers du
+      même paquet se voient sans rien importer, comme en Java.
+    </p>
+    <pre><code>ravac new ma-banque
+
+ma-banque/
+├── rava.toml                  <span class="c">// manifeste Cargo</span>
+└── src/
+    ├── Main.rava              <span class="c">// paquet racine</span>
+    ├── geo/Point.rava         <span class="k">package</span> geo;
+    └── banque/Compte.rava     <span class="k">package</span> banque;  <span class="k">import</span> geo.Point;</code></pre>
+    <p>
+      Les dépendances déclarées dans <code>rava.toml</code> sont recopiées telles quelles
+      dans le <code>Cargo.toml</code> généré : tout l'écosystème Rust est à votre disposition.
+      <code>ravac run</code> traduit, construit et exécute.
+      Détail dans <a href="https://github.com/geneacta/rava/blob/main/docs/PROJETS.md">PROJETS.md</a>.
+    </p>
+
+    <h3><span class="num">Étape 7</span>Votre premier programme</h3>
     <ol class="steps">
       <li><b>Écrivez un <code>.rava</code></b>
         Une classe, un <code>public static void main(String[] args)</code>, et <code>System.out.println("{}", x)</code> — le format est celui de Rust.</li>
@@ -541,6 +562,40 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       <code>a xor b and c</code> produit <code>a ^ (b &amp;&amp; c)</code>.</p>
     </div>
 
+    <h3><span class="num">Projets</span>Un paquet, un module</h3>
+    <p>
+      Le modèle est celui de Java, projeté sur celui de Rust : le répertoire décide du
+      paquet, et <strong>tous les fichiers d'un paquet atterrissent dans le même module</strong> —
+      en Java le fichier n'est pas un espace de noms, seul le paquet en est un.
+    </p>
+    <div class="pair">
+      <figure class="rava"><figcaption>src/geo/</figcaption><pre><code><span class="c">// Point.rava</span>
+<span class="k">package</span> geo;
+<span class="k">public record</span> Point(f64 x, f64 y) { }
+
+<span class="c">// Forme.rava</span>
+<span class="k">package</span> geo;
+<span class="k">public interface</span> Forme {
+    Point centre();   <span class="c">// même paquet, pas d'import</span>
+}</code></pre></figure>
+      <figure class="rust"><figcaption>target/rava/src/geo/mod.rs</figcaption><pre><code><span class="k">#[path =</span> <span class="s">"Point.rs"</span><span class="k">]</span>
+<span class="k">mod</span> __rava_file_Point;
+<span class="k">pub use</span> __rava_file_Point::*;
+
+<span class="k">#[path =</span> <span class="s">"Forme.rs"</span><span class="k">]</span>
+<span class="k">mod</span> __rava_file_Forme;
+<span class="k">pub use</span> __rava_file_Forme::*;
+
+<span class="c">// et chaque fichier s'ouvre par `use super::*;`</span></code></pre></figure>
+    </div>
+    <p>
+      <code>rava.toml</code> <em>est</em> un manifeste Cargo : <code>ravac</code> n'en lit que
+      le nom et l'édition, tout le reste — dépendances comprises — est recopié tel quel.
+      Un <code>import</code> dont le premier segment n'est pas un paquet du projet passe intact,
+      donc <code>std</code> et vos crates fonctionnent sans rien de spécial.
+      <code>ravac run</code> écrit un projet Cargo dans <code>target/rava/</code> et lui passe la main.
+    </p>
+
     <h3><span class="num">Outillage</span>Un serveur de langage, partout</h3>
     <pre><code>cargo install --path crates/rava-lsp</code></pre>
     <p>
@@ -618,6 +673,10 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
     <a href="https://github.com/geneacta/rava/blob/main/docs/ANNOTATIONS.md">
       <div class="t">ANNOTATIONS.md</div>
       <div class="d">Référence des annotations : emprunts, durées de vie, attributs.</div>
+    </a>
+    <a href="https://github.com/geneacta/rava/blob/main/docs/PROJETS.md">
+      <div class="t">PROJETS.md</div>
+      <div class="d">Paquets, <code>rava.toml</code>, arborescence générée, dépendances Cargo.</div>
     </a>
     <a href="https://github.com/geneacta/rava/blob/main/editors/README.md">
       <div class="t">editors/</div>

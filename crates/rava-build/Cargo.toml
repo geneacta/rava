@@ -1,13 +1,12 @@
 [package]
-name = "rava-check"
+name = "rava-build"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Vérification complète d'un source Rava : traduction, rustc, diagnostics ramenés sur le .rava."
+description = "Projets Rava : paquets, arborescence de modules, Cargo.toml généré."
 
 [dependencies]
+rava-ast.workspace = true
 rava-parser.workspace = true
 rava-codegen.workspace = true
-rava-json.workspace = true
-rava-build.workspace = true

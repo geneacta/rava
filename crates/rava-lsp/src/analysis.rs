@@ -1,9 +1,10 @@
 //! Ce que le serveur sait dire d'un document : erreurs, survol, complétion,
 //! plan du fichier et corrections rapides.
 
-use rava_json::Json;
 use crate::kb::{self, Kind};
 use rava_ast::*;
+use rava_json::Json;
+use std::collections::BTreeMap;
 
 /// Un document ouvert, avec ses lignes déjà découpées.
 pub struct Doc {
@@ -93,17 +94,85 @@ impl Doc {
 // ------------------------------------------------------------------ erreurs
 
 /// Diagnostics rapides : syntaxe et traduction, à chaque frappe.
-pub fn diagnostics(doc: &Doc) -> Json {
-    to_json(doc, &rava_check::check_syntax(&doc.text))
+pub fn diagnostics(doc: &Doc, uri: &str) -> Json {
+    to_json(doc, &rava_check::check_syntax(&doc.text, &path_of(uri)))
+}
+
+/// Chemin du fichier derrière une URI `file://`.
+fn path_of(uri: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(uri.strip_prefix("file://").unwrap_or(uri))
 }
 
 /// Diagnostics complets : `rustc` en plus — emprunt, durées de vie, typage.
 /// Trop coûteux à chaque frappe, on les calcule à l'ouverture et à
 /// l'enregistrement.
-pub fn full_diagnostics(doc: &Doc, uri: &str) -> Json {
+///
+/// Renvoie une entrée par fichier concerné. Un fichier de projet ne peut pas
+/// être vérifié isolément : ses `import` désignent d'autres paquets, et on
+/// signalerait des imports non résolus qui n'existent pas.
+pub fn full_diagnostics(doc: &Doc, uri: &str) -> Vec<(String, Json)> {
+    let path = path_of(uri);
+
+    if let Some(root) = project_root(&path) {
+        let out_dir = root.join("target").join("rava");
+        let report = rava_check::check_project(&root, &out_dir, true);
+
+        // Un publish par fichier du projet, y compris vide : c'est ainsi que
+        // les marqueurs d'une correction précédente disparaissent.
+        let mut per_file: BTreeMap<String, Vec<rava_check::Diagnostic>> = BTreeMap::new();
+        if let Some(built) = &report.built {
+            for f in &built.files {
+                per_file.entry(uri_of(&f.rava_path)).or_default();
+            }
+        }
+        per_file.entry(uri.to_string()).or_default();
+        for d in report.diagnostics {
+            per_file.entry(uri_of(&d.file)).or_default().push(d);
+        }
+
+        return per_file
+            .into_iter()
+            .map(|(u, ds)| {
+                // Le document ouvert est en mémoire ; les autres sont relus.
+                let owned;
+                let d = if u == uri {
+                    doc
+                } else {
+                    owned = Doc::new(std::fs::read_to_string(path_of(&u)).unwrap_or_default());
+                    &owned
+                };
+                let json = to_json(d, &ds);
+                (u, json)
+            })
+            .collect();
+    }
+
     let name = uri.rsplit('/').next().unwrap_or("source");
     let report = rava_check::check(&doc.text, name, rava_check::CrateType::Lib);
-    to_json(doc, &report.diagnostics)
+    vec![(uri.to_string(), to_json(doc, &report.diagnostics))]
+}
+
+/// Racine du projet contenant `path` : le premier ancêtre portant un
+/// `rava.toml`, ou le parent d'un répertoire `src` traversé.
+fn project_root(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut dir = path.parent()?;
+    let mut via_src = None;
+    loop {
+        if dir.join("rava.toml").is_file() {
+            return Some(dir.to_path_buf());
+        }
+        if dir.file_name().is_some_and(|n| n == "src") {
+            via_src = dir.parent().map(std::path::Path::to_path_buf);
+        }
+        dir = dir.parent()?;
+        if via_src.is_some() && !dir.join("rava.toml").is_file() {
+            return via_src.filter(|r| rava_build::is_project(r));
+        }
+    }
+}
+
+fn uri_of(path: &std::path::Path) -> String {
+    format!("file://{}", path.display())
 }
 
 fn to_json(doc: &Doc, diags: &[rava_check::Diagnostic]) -> Json {

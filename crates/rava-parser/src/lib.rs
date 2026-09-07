@@ -1720,6 +1720,13 @@ impl Parser {
             _ => {}
         }
 
+        // Valeur unité `()` — Java n'en a pas de notation, Rust en a besoin.
+        if t.is_punct("(") && self.at(1).is_punct(")") && !self.at(2).is_punct("->") {
+            self.bump();
+            self.bump();
+            return Ok(Expr::Lit(Lit::Unit, span));
+        }
+
         if t.is_punct("(") {
             // Lambda `(a, b) -> ...`
             if self.in_guard == 0 {
@@ -1850,6 +1857,8 @@ impl Parser {
                 inclusive: false,
                 span,
             }),
+            // Forme Java stricte de la valeur unité.
+            ("Unit", "of") if args.is_empty() => Some(Expr::Lit(Lit::Unit, span)),
             ("Rust", "expr") => match args.first() {
                 Some(Expr::Lit(Lit::Str(s), _)) => Some(Expr::RawRust(s.clone(), span)),
                 _ => {

@@ -219,7 +219,8 @@ Attention si vous éditez aussi du Java : la ligne ci-dessus détourne
 | Fonction | Détail |
 |---|---|
 | **Diagnostics — frappe** | erreurs de syntaxe et de génération, avec la note qui dit quoi écrire à la place. Republiés à chaque frappe. |
-| **Diagnostics — enregistrement** | `rustc` est invoqué sur le Rust généré, et ses erreurs sont **ramenées sur le `.rava`** : emprunt, durées de vie, typage, avec les positions liées. Réglage `checkOnSave`. |
+| **Diagnostics — enregistrement** | `rustc` (ou `cargo` pour un projet) est invoqué sur le Rust généré, et ses erreurs sont **ramenées sur le `.rava`** : emprunt, durées de vie, typage, avec les positions liées. Réglage `checkOnSave`. |
+| **Projets** | le serveur détecte qu'un fichier appartient à un projet — il remonte au `rava.toml` — vérifie le projet entier et répartit les diagnostics sur les bons fichiers. Un fichier de projet ne peut pas être vérifié seul : ses `import` désignent d'autres paquets. |
 | **Survol** | sur une annotation, un mot-clé, une façade ou un type : ce que la construction devient en Rust, et pourquoi. Y compris sur `null`, `try`, `instanceof` — le survol explique le refus. |
 | **Complétion** | annotations après `@`, membres après `Macro.` / `Ref.` / `Range.` / `Arr.` …, mots-clés, types Rust, et six fragments (classe, `main`, filtrage d'un `Result`, d'une `Option`, boucle sur emprunt, méthode d'interface). |
 | **Plan du fichier** | classes, records, interfaces, enums, avec champs, constantes, variantes, types associés et méthodes. |

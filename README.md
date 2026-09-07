@@ -73,13 +73,40 @@ pas faire, Rava ne le fait pas non plus, et le dit clairement.
 ## Démarrer
 
 ```sh
-cargo build --release
+cargo install --path crates/ravac
 
-./target/release/ravac emit  examples/Demo.rava    # affiche le Rust généré
-./target/release/ravac check examples/Demo.rava    # vérifie avec rustc
-./target/release/ravac run   examples/Demo.rava    # compile et exécute
-./target/release/ravac build src/ -o target/rava   # traduit une arborescence
+ravac new ma-banque
+cd ma-banque
+ravac run
 ```
+
+Sur un fichier isolé, sans projet :
+
+```sh
+ravac emit  Demo.rava     # affiche le Rust généré
+ravac check Demo.rava     # vérifie avec rustc
+ravac run   Demo.rava     # compile et exécute
+```
+
+## Projets
+
+Plusieurs fichiers, des paquets, des dépendances Cargo :
+
+```
+ma-banque/
+├── rava.toml                  manifeste Cargo — les dépendances passent telles quelles
+└── src/
+    ├── Main.rava              paquet racine
+    ├── geo/Point.rava         package geo;
+    └── banque/Compte.rava     package banque;  ·  import geo.Point;
+```
+
+Comme en Java, le répertoire fait foi et **le paquet est le seul espace de
+noms** : deux fichiers du même paquet se voient sans import. `ravac` écrit un
+projet Cargo dans `target/rava/` et laisse `cargo` construire.
+
+Le détail — arborescence, manifeste, sortie générée — est dans
+[docs/PROJETS.md](docs/PROJETS.md).
 
 ## Ce qui est ajouté à Java
 
@@ -146,6 +173,7 @@ Le détail par éditeur — et l'extension VS Code — est dans
 | [**IMPOSSIBLE.md**](docs/IMPOSSIBLE.md) | Ce que Rava ne fera pas, et quoi écrire à la place |
 | [**SYNTAX.md**](docs/SYNTAX.md) | La table de correspondance Java ↔ Rust, complète |
 | [**ANNOTATIONS.md**](docs/ANNOTATIONS.md) | Référence des annotations |
+| [**PROJETS.md**](docs/PROJETS.md) | Paquets, `rava.toml`, arborescence générée |
 
 Site : parcours **« je viens de Java »** et **« je viens de Rust »** sur
 <https://geneacta.github.io/rava/>.
@@ -157,7 +185,8 @@ crates/rava-lexer/     tokens Java
 crates/rava-parser/    grammaire Java -> AST
 crates/rava-codegen/   AST -> source Rust
 crates/ravac/          binaire en ligne de commande
-crates/rava-check/     traduction + rustc, diagnostics ramenés sur le .rava
+crates/rava-build/     projets : paquets, modules, Cargo.toml généré
+crates/rava-check/     traduction + rustc/cargo, diagnostics ramenés sur le .rava
 crates/rava-json/      JSON minimal (protocole LSP, diagnostics rustc)
 crates/rava-lsp/       serveur de langage (LSP) pour les éditeurs
 editors/               extension VS Code, grammaire TextMate, réglages par éditeur
@@ -174,6 +203,11 @@ cargo test        # unitaires + compilation de tous les exemples par rustc
 Prototype fonctionnel. Le langage couvre classes, records, interfaces (traits
 avec types et constantes associés, méthodes par défaut), enums à charge utile,
 génériques bornés, durées de vie, emprunts, filtrage par motif avec gardes et
-déconstruction, fermetures, `unsafe`, macros et attributs.
+déconstruction, fermetures, `unsafe`, macros et attributs — et les projets
+multi-paquets avec dépendances Cargo.
+
+Comme en Java, l'indentation n'a aucun sens : les instructions se terminent par
+`;`, les blocs par des accolades. Un programme écrit sur une seule ligne produit
+exactement le même Rust.
 
 Licence Apache 2.0.

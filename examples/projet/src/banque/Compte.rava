@@ -1,0 +1,34 @@
+package banque;
+
+import geo.Point;
+
+@Derive({"Debug", "Clone"})
+public class Compte {
+    private String titulaire;
+    private i64 solde;
+    private Point agence;
+
+    public Compte(String titulaire, Point agence) {
+        this.titulaire = titulaire;
+        this.solde = 0;
+        this.agence = agence;
+    }
+
+    @Mut
+    public Result<Unit, String> retirer(i64 montant) {
+        unless (montant <= this.solde) {
+            return Err(Macro.format("solde insuffisant : {} < {}", this.solde, montant));
+        }
+        this.solde -= montant;
+        return Ok(());
+    }
+
+    @Mut
+    public void crediter(i64 montant) {
+        this.solde += montant;
+    }
+
+    public i64 solde() { return this.solde; }
+    public @Ref str titulaire() { return Ref.of(this.titulaire); }
+    public Point agence() { return this.agence; }
+}

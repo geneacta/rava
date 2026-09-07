@@ -1,3 +1,7 @@
 /target
 **/*.rs.bk
 Cargo.lock
+
+# Sortie des projets Rava d'exemple
+**/target/rava/
+examples/projet/target/

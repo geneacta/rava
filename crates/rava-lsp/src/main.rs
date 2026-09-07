@@ -81,7 +81,7 @@ impl Server {
                     .unwrap_or("")
                     .to_string();
                 self.set_doc(uri.clone(), text);
-                vec![self.publish(&uri, self.check_on_save)]
+                self.publish(&uri, self.check_on_save)
             }
             "textDocument/didChange" => {
                 let uri = uri_of(&params, &["textDocument", "uri"]);
@@ -96,11 +96,11 @@ impl Server {
                     self.set_doc(uri.clone(), text.to_string());
                 }
                 // Pendant la frappe : syntaxe et traduction seulement.
-                vec![self.publish(&uri, false)]
+                self.publish(&uri, false)
             }
             "textDocument/didSave" => {
                 let uri = uri_of(&params, &["textDocument", "uri"]);
-                vec![self.publish(&uri, self.check_on_save)]
+                self.publish(&uri, self.check_on_save)
             }
             "textDocument/didClose" => {
                 let uri = uri_of(&params, &["textDocument", "uri"]);
@@ -166,18 +166,28 @@ impl Server {
         self.docs.insert(uri, doc);
     }
 
-    /// `full` ajoute les diagnostics de `rustc`, au prix d'un appel au
-    /// compilateur : réservé à l'ouverture et à l'enregistrement.
-    fn publish(&self, uri: &str, full: bool) -> Json {
-        let diagnostics = match self.docs.get(uri) {
+    /// `full` ajoute les diagnostics de `rustc` (ou de `cargo` pour un projet),
+    /// au prix d'un appel au compilateur : réservé à l'ouverture et à
+    /// l'enregistrement.
+    ///
+    /// Dans un projet, une seule sauvegarde concerne plusieurs fichiers : on
+    /// publie pour chacun, y compris vide, pour effacer les marqueurs devenus
+    /// caducs.
+    fn publish(&self, uri: &str, full: bool) -> Vec<Json> {
+        let per_file = match self.docs.get(uri) {
             Some(d) if full => analysis::full_diagnostics(d, uri),
-            Some(d) => analysis::diagnostics(d),
-            None => Json::Arr(Vec::new()),
+            Some(d) => vec![(uri.to_string(), analysis::diagnostics(d, uri))],
+            None => vec![(uri.to_string(), Json::Arr(Vec::new()))],
         };
-        notification(
-            "textDocument/publishDiagnostics",
-            Json::obj(vec![("uri", Json::str(uri)), ("diagnostics", diagnostics)]),
-        )
+        per_file
+            .into_iter()
+            .map(|(u, diagnostics)| {
+                notification(
+                    "textDocument/publishDiagnostics",
+                    Json::obj(vec![("uri", Json::str(u)), ("diagnostics", diagnostics)]),
+                )
+            })
+            .collect()
     }
 }
 

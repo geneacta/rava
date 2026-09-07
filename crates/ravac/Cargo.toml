@@ -10,9 +10,14 @@ description = "Rava compiler: Java syntax, Rust semantics. Transpiles .rava to R
 name = "ravac"
 path = "src/main.rs"
 
+[dev-dependencies]
+rava-check.workspace = true
+rava-build.workspace = true
+
 [dependencies]
 rava-ast.workspace = true
 rava-lexer.workspace = true
 rava-parser.workspace = true
 rava-codegen.workspace = true
 rava-check.workspace = true
+rava-build.workspace = true

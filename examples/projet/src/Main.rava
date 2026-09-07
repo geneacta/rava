@@ -1,0 +1,24 @@
+import banque.Compte;
+import geo.Point;
+
+public class Main {
+
+    public static void main(String[] args) {
+        var agence = new Point(2.5, 4.0);
+        @Mut var c = new Compte("Alice".to_string(), agence);
+
+        c.crediter(120);
+        switch (c.retirer(50)) {
+            case Ok(var _u) -> System.out.println("retrait effectué");
+            case Err(var e) -> System.out.println("refus : {}", e);
+        }
+        switch (c.retirer(500)) {
+            case Ok(var _u) -> System.out.println("retrait effectué");
+            case Err(var e) -> System.out.println("refus : {}", e);
+        }
+
+        System.out.println(
+            "{} — solde {} — agence à {:.2} du centre",
+            c.titulaire(), c.solde(), c.agence().norme());
+    }
+}

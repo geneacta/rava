@@ -1,0 +1,9 @@
+package geo;
+
+@Derive({"Debug", "Clone", "Copy", "PartialEq"})
+public record Point(f64 x, f64 y) {
+
+    public f64 norme() {
+        return (this.x * this.x + this.y * this.y).sqrt();
+    }
+}

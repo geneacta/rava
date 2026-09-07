@@ -1,0 +1,10 @@
+package geo;
+
+/**
+ * `Point` est dans le même paquet : aucun import n'est nécessaire,
+ * exactement comme en Java.
+ */
+public interface Forme {
+    f64 aire();
+    Point centre();
+}

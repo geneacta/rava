@@ -1,0 +1,7 @@
+[package]
+name = "demo-banque"
+version = "0.1.0"
+
+[dependencies]
+# Les dépendances sont recopiées telles quelles dans le Cargo.toml généré :
+# tout l'écosystème Rust reste accessible.

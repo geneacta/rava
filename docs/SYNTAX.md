@@ -12,11 +12,27 @@ n'est pas dans [IMPOSSIBLE.md](IMPOSSIBLE.md) passe tel quel à `rustc`.
 
 | Rava | Rust |
 |---|---|
-| `package a.b.c;` | (informatif — l'arborescence des fichiers fait foi) |
-| `import std.collections.HashMap;` | `use std::collections::HashMap;` |
+| `package a.b.c;` | module `a::b::c` — le répertoire fait foi, la déclaration le confirme |
+| `import geo.Point;` | `use crate::geo::Point;` si `geo` est un paquet du projet |
+| `import std.collections.HashMap;` | `use std::collections::HashMap;` sinon |
 | `import std.fmt.*;` | `use std::fmt::*;` |
 
+Comme en Java, **le paquet est le seul espace de noms** : deux fichiers du même
+paquet se voient sans import. Voir [PROJETS.md](PROJETS.md).
+
 Un `.rava` produit un `.rs` de même nom.
+
+## 1 bis. Mise en page
+
+L'indentation n'a **aucune signification**, exactement comme en Java :
+
+- une instruction se termine par `;` ;
+- un bloc est délimité par `{` et `}` ;
+- une expression peut courir sur plusieurs lignes ;
+- un programme écrit sur une seule ligne produit le même Rust qu'un programme
+  aéré.
+
+Un `;` manquant est une erreur, jamais un saut de ligne implicite.
 
 ---
 
@@ -54,7 +70,8 @@ Les types **non signés** n'ont pas de nom Java : on écrit directement `u8`,
 | `@Impl Iterator<Item = i32>` | `impl Iterator<Item = i32>` | |
 | `Tuple<A, B>` | `(A, B)` | |
 | `Array<T, N>` | `[T; N]` | tableau de taille fixe |
-| `Unit` | `()` | |
+| `Unit` | `()` |
+| `()` ou `Unit.of()` | `()` (la valeur unité) | |
 | `Fn2<A, B, R>` | `Fn(A, B) -> R` | idem `FnMut2`, `FnOnce2`, pour 0 à N arguments |
 
 ---

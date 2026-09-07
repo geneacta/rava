@@ -1,43 +1,16 @@
-//! Vérification complète d'un source Rava.
+//! Vérification d'un source ou d'un projet Rava.
 //!
-//! Traduit le `.rava`, le confie à `rustc`, puis **ramène les diagnostics sur
-//! le fichier écrit**. C'est ce qui rend la promesse tenable : la sémantique
-//! est celle de Rust, donc les erreurs sont celles de Rust — mais elles
-//! doivent se lire à l'endroit où l'on a tapé.
+//! Traduit, confie le résultat à `rustc` ou à `cargo`, puis **ramène les
+//! diagnostics sur les fichiers écrits**. C'est ce qui rend la promesse
+//! tenable : la sémantique est celle de Rust, donc les erreurs sont celles de
+//! Rust — mais elles doivent se lire à l'endroit où l'on a tapé.
 
+pub use rava_build::{Diagnostic, Level};
+
+use rava_build::{Built, BuiltFile};
 use rava_json::Json;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Level {
-    Error,
-    Warning,
-}
-
-impl Level {
-    pub fn label(self) -> &'static str {
-        match self {
-            Level::Error => "erreur",
-            Level::Warning => "attention",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Diagnostic {
-    pub level: Level,
-    /// `E0502` pour rustc, `rava.null` pour les refus de Rava.
-    pub code: Option<String>,
-    pub message: String,
-    /// Position dans le `.rava`.
-    pub line: u32,
-    pub col: u32,
-    /// Position d'origine dans le Rust généré, quand le diagnostic en vient.
-    pub rust_pos: Option<(u32, u32)>,
-    /// Notes et aides attachées.
-    pub notes: Vec<String>,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CrateType {
@@ -46,6 +19,8 @@ pub enum CrateType {
     /// Production d'un exécutable.
     Bin,
 }
+
+// ---------------------------------------------------------------- fichier seul
 
 pub struct Report {
     pub diagnostics: Vec<Diagnostic>,
@@ -68,12 +43,13 @@ impl Report {
 /// Vérification rapide : syntaxe et traduction, sans appeler `rustc`.
 ///
 /// C'est ce qu'un éditeur peut se permettre à chaque frappe.
-pub fn check_syntax(source: &str) -> Vec<Diagnostic> {
+pub fn check_syntax(source: &str, file: &Path) -> Vec<Diagnostic> {
     match rava_parser::parse(source) {
         Err(e) => vec![Diagnostic {
             level: Level::Error,
             code: e.code.map(str::to_string),
             message: e.message,
+            file: file.to_path_buf(),
             line: e.line,
             col: e.col,
             rust_pos: None,
@@ -85,6 +61,7 @@ pub fn check_syntax(source: &str) -> Vec<Diagnostic> {
                 level: Level::Error,
                 code: e.code.map(str::to_string),
                 message: e.message,
+                file: file.to_path_buf(),
                 line: e.line,
                 col: e.col,
                 rust_pos: None,
@@ -94,8 +71,9 @@ pub fn check_syntax(source: &str) -> Vec<Diagnostic> {
     }
 }
 
-/// Traduit puis vérifie. `name` sert à nommer le fichier `.rs` intermédiaire.
+/// Traduit puis vérifie un fichier isolé.
 pub fn check(source: &str, name: &str, crate_type: CrateType) -> Report {
+    let file = PathBuf::from(name);
     let mut report = Report {
         diagnostics: Vec::new(),
         rust: None,
@@ -107,19 +85,11 @@ pub fn check(source: &str, name: &str, crate_type: CrateType) -> Report {
     let unit = match rava_parser::parse(source) {
         Ok(u) => u,
         Err(e) => {
-            report.diagnostics.push(Diagnostic {
-                level: Level::Error,
-                code: e.code.map(str::to_string),
-                message: e.message,
-                line: e.line,
-                col: e.col,
-                rust_pos: None,
-                notes: e.note.into_iter().collect(),
-            });
+            report.diagnostics = check_syntax(source, &file);
+            let _ = e;
             return report;
         }
     };
-
     let out = match rava_codegen::generate_with_map(&unit) {
         Ok(o) => o,
         Err(e) => {
@@ -127,6 +97,7 @@ pub fn check(source: &str, name: &str, crate_type: CrateType) -> Report {
                 level: Level::Error,
                 code: e.code.map(str::to_string),
                 message: e.message,
+                file,
                 line: e.line,
                 col: e.col,
                 rust_pos: None,
@@ -175,12 +146,16 @@ pub fn check(source: &str, name: &str, crate_type: CrateType) -> Report {
     match cmd.output() {
         Err(_) => report.rustc_available = false,
         Ok(o) => {
+            let single = FileMap {
+                rava_path: file.clone(),
+                rava_lines: source.lines().map(str::to_string).collect(),
+                rust_lines: out.rust.lines().map(str::to_string).collect(),
+                map: out.map.clone(),
+            };
             let stderr = String::from_utf8_lossy(&o.stderr);
-            let rava_lines: Vec<&str> = source.lines().collect();
-            let rust_lines: Vec<&str> = out.rust.lines().collect();
             for line in stderr.lines() {
                 let Some(v) = rava_json::parse(line) else { continue };
-                if let Some(d) = convert(&v, &out.map, &rava_lines, &rust_lines) {
+                if let Some(d) = convert(&v, &|_| Some(&single)) {
                     report.diagnostics.push(d);
                 }
             }
@@ -195,13 +170,124 @@ pub fn check(source: &str, name: &str, crate_type: CrateType) -> Report {
     report
 }
 
+// ---------------------------------------------------------------- projet
+
+pub struct ProjectReport {
+    pub diagnostics: Vec<Diagnostic>,
+    /// Projet généré, si la traduction a abouti.
+    pub built: Option<Built>,
+    /// Faux quand `cargo` est introuvable.
+    pub cargo_available: bool,
+}
+
+impl ProjectReport {
+    pub fn has_errors(&self) -> bool {
+        self.diagnostics.iter().any(|d| d.level == Level::Error)
+    }
+}
+
+/// Traduit le projet dans `out_dir`, puis lance `cargo` si `with_cargo`.
+pub fn check_project(root: &Path, out_dir: &Path, with_cargo: bool) -> ProjectReport {
+    let mut report =
+        ProjectReport { diagnostics: Vec::new(), built: None, cargo_available: true };
+
+    let project = match rava_build::discover(root) {
+        Ok(p) => p,
+        Err(d) => {
+            report.diagnostics.push(d);
+            return report;
+        }
+    };
+    let built = match rava_build::emit(&project, out_dir) {
+        Ok(b) => b,
+        Err(ds) => {
+            report.diagnostics = ds;
+            return report;
+        }
+    };
+
+    if with_cargo {
+        let maps = file_maps(&built);
+        let output = Command::new("cargo")
+            .arg("build")
+            .arg("--message-format=json")
+            .arg("--manifest-path")
+            .arg(out_dir.join("Cargo.toml"))
+            .output();
+        match output {
+            Err(_) => report.cargo_available = false,
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                for line in stdout.lines() {
+                    let Some(v) = rava_json::parse(line) else { continue };
+                    // Cargo enveloppe les diagnostics de rustc.
+                    if v.get("reason").and_then(Json::as_str) != Some("compiler-message") {
+                        continue;
+                    }
+                    let Some(msg) = v.get("message") else { continue };
+                    if let Some(d) = convert(msg, &|name| lookup(&maps, name)) {
+                        report.diagnostics.push(d);
+                    }
+                }
+                // Une panne de cargo elle-même ne doit pas passer inaperçue.
+                if !o.status.success() && !report.has_errors() {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    report.diagnostics.push(Diagnostic {
+                        level: Level::Error,
+                        code: None,
+                        message: format!("cargo a échoué : {}", stderr.trim()),
+                        file: out_dir.join("Cargo.toml"),
+                        line: 1,
+                        col: 1,
+                        rust_pos: None,
+                        notes: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
+
+    report.built = Some(built);
+    report
+}
+
+// ---------------------------------------------------------------- conversion
+
+/// Un fichier généré et de quoi remonter à sa source.
+struct FileMap {
+    rava_path: PathBuf,
+    rava_lines: Vec<String>,
+    rust_lines: Vec<String>,
+    map: Vec<u32>,
+}
+
+fn file_maps(built: &Built) -> Vec<FileMap> {
+    built
+        .files
+        .iter()
+        .map(|f: &BuiltFile| FileMap {
+            rava_path: f.rava_path.clone(),
+            rava_lines: f.rava_source.lines().map(str::to_string).collect(),
+            rust_lines: f.rust_source.lines().map(str::to_string).collect(),
+            map: f.map.clone(),
+        })
+        .collect()
+}
+
+/// Cargo nomme les fichiers relativement au manifeste ; on tolère aussi un
+/// chemin absolu ou préfixé.
+fn lookup<'a>(maps: &'a [FileMap], name: &str) -> Option<&'a FileMap> {
+    let want = name.replace('\\', "/");
+    maps.iter().find(|m| {
+        m.rava_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .is_some_and(|s| want.ends_with(&format!("/{s}.rs")) || want == format!("{s}.rs"))
+    })
+}
+
 /// Convertit un diagnostic JSON de `rustc` en diagnostic ancré sur le `.rava`.
-fn convert(
-    v: &Json,
-    map: &[u32],
-    rava_lines: &[&str],
-    rust_lines: &[&str],
-) -> Option<Diagnostic> {
+fn convert<'a>(v: &Json, resolve: &dyn Fn(&str) -> Option<&'a FileMap>) -> Option<Diagnostic> {
     let level = match v.get("level")?.as_str()? {
         "error" => Level::Error,
         "warning" => Level::Warning,
@@ -226,23 +312,27 @@ fn convert(
         })
         .cloned();
 
-    let (line, col, rust_pos) = match &primary {
+    let file_of = |s: &Json| s.get("file_name").and_then(Json::as_str).unwrap_or("").to_string();
+
+    let (file, line, col, rust_pos) = match &primary {
         Some(s) => {
+            let name = file_of(s);
+            let fm = resolve(&name)?;
             let rl = s.get("line_start").and_then(Json::as_u32).unwrap_or(1);
             let rc = s.get("column_start").and_then(Json::as_u32).unwrap_or(1);
-            let origin = map.get(rl.saturating_sub(1) as usize).copied().unwrap_or(0);
+            let origin = fm.map.get(rl.saturating_sub(1) as usize).copied().unwrap_or(0);
             if origin == 0 {
                 // Ligne sans origine : le prélude, ou un masque inséré. Une
                 // erreur mérite quand même d'être vue ; un avertissement, non.
                 if level == Level::Warning {
                     return None;
                 }
-                (1, 1, Some((rl, rc)))
+                (fm.rava_path.clone(), 1, 1, Some((rl, rc)))
             } else {
-                (origin, align_column(origin, rc, rl, rava_lines, rust_lines), Some((rl, rc)))
+                (fm.rava_path.clone(), origin, align_column(origin, rc, rl, fm), Some((rl, rc)))
             }
         }
-        None => (1, 1, None),
+        None => (PathBuf::new(), 1, 1, None),
     };
 
     let mut notes = Vec::new();
@@ -257,7 +347,7 @@ fn convert(
                 continue;
             }
             let Some(label) = sp.get("label").and_then(Json::as_str) else { continue };
-            if let Some(l) = origin_line(sp, map) {
+            if let Some(l) = origin_line(sp, resolve(&file_of(sp))) {
                 notes.push(format!("ligne {l} : {label}"));
             }
         }
@@ -276,20 +366,21 @@ fn convert(
                 .get("spans")
                 .and_then(Json::as_arr)
                 .and_then(|s| s.first())
-                .and_then(|s| origin_line(s, map))
+                .and_then(|s| origin_line(s, resolve(&file_of(s))))
                 .map(|l| format!(" (ligne {l})"))
                 .unwrap_or_default();
             notes.push(format!("{lvl}{where_} : {msg}"));
         }
     }
 
-    Some(Diagnostic { level, code, message, line, col, rust_pos, notes })
+    Some(Diagnostic { level, code, message, file, line, col, rust_pos, notes })
 }
 
 /// Ligne `.rava` d'un span rustc, si elle est connue.
-fn origin_line(span: &Json, map: &[u32]) -> Option<u32> {
+fn origin_line(span: &Json, fm: Option<&FileMap>) -> Option<u32> {
+    let fm = fm?;
     let rl = span.get("line_start").and_then(Json::as_u32)?;
-    match map.get(rl.saturating_sub(1) as usize).copied() {
+    match fm.map.get(rl.saturating_sub(1) as usize).copied() {
         Some(0) | None => None,
         Some(l) => Some(l),
     }
@@ -298,20 +389,13 @@ fn origin_line(span: &Json, map: &[u32]) -> Option<u32> {
 /// Reporte la colonne : on cherche dans la ligne `.rava` le mot que `rustc`
 /// désigne dans le Rust. Les identifiants traversent la traduction tels quels,
 /// donc cela tombe juste la plupart du temps.
-fn align_column(
-    rava_line: u32,
-    rust_col: u32,
-    rust_line: u32,
-    rava_lines: &[&str],
-    rust_lines: &[&str],
-) -> u32 {
-    let Some(target) = rava_lines.get(rava_line.saturating_sub(1) as usize) else {
+fn align_column(rava_line: u32, rust_col: u32, rust_line: u32, fm: &FileMap) -> u32 {
+    let Some(target) = fm.rava_lines.get(rava_line.saturating_sub(1) as usize) else {
         return 1;
     };
-    let first_word = |s: &str| -> u32 {
-        s.chars().take_while(|c| c.is_whitespace()).count() as u32 + 1
-    };
-    let Some(rust) = rust_lines.get(rust_line.saturating_sub(1) as usize) else {
+    let first_word =
+        |s: &str| -> u32 { s.chars().take_while(|c| c.is_whitespace()).count() as u32 + 1 };
+    let Some(rust) = fm.rust_lines.get(rust_line.saturating_sub(1) as usize) else {
         return first_word(target);
     };
 
@@ -330,10 +414,7 @@ fn align_column(
     }
     let word: String = chars[start..end].iter().collect();
 
-    match find_word(target, &word) {
-        Some(col) => col,
-        None => first_word(target),
-    }
+    find_word(target, &word).unwrap_or_else(|| first_word(target))
 }
 
 /// Position (1-basée, en caractères) du mot entier `word` dans `line`.
@@ -399,9 +480,7 @@ class A {
             .find(|d| d.level == Level::Error)
             .expect("une erreur d'emprunt était attendue");
         assert_eq!(e.code.as_deref(), Some("E0502"));
-        // `v.push(4);` est à la ligne 5 du .rava.
         assert_eq!(e.line, 5, "{e:?}");
-        // Les positions liées sont ramenées, elles aussi.
         assert!(
             e.notes.iter().any(|n| n.starts_with("ligne 4 :")),
             "l'emprunt initial (ligne 4) doit être signalé : {:?}",
@@ -429,14 +508,12 @@ class A {
         }
         let e = r.diagnostics.iter().find(|d| d.level == Level::Error).expect("erreur de type");
         assert_eq!(e.line, 4, "{e:?}");
-        // La colonne doit désigner `s`, pas le début de la ligne.
         assert_eq!(e.col, 16, "{e:?}");
     }
 
     #[test]
     fn un_fichier_correct_ne_produit_aucune_erreur() {
-        let src = "class A { public i32 f() { return 1; } }";
-        let r = check(src, "A", CrateType::Lib);
+        let r = check("class A { public i32 f() { return 1; } }", "A", CrateType::Lib);
         assert!(!r.has_errors(), "{:?}", r.diagnostics);
     }
 

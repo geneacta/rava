@@ -103,11 +103,30 @@ pub struct Output {
 /// voyage avec sa ligne, quoi qu'il arrive ensuite.
 const LINE_MARK: &str = "//~rava:";
 
+/// Ce que le fichier doit savoir du projet qui l'entoure.
+///
+/// Hors projet (un `.rava` isolé), tout est vide : les `import` passent tels
+/// quels, ce qui laisse `std` et les crates externes fonctionner.
+#[derive(Debug, Clone, Default)]
+pub struct Context {
+    /// Premiers segments des paquets du projet. Un `import` qui commence par
+    /// l'un d'eux est résolu en `crate::…`.
+    pub crate_roots: Vec<String>,
+    /// Le fichier appartient-il à un paquet ? Si oui, il ouvre par
+    /// `use super::*;` — en Java, le paquet est le seul espace de noms, les
+    /// autres fichiers du même paquet sont visibles sans import.
+    pub in_package: bool,
+}
+
 pub fn generate(unit: &Unit) -> R<String> {
     Ok(generate_with_map(unit)?.rust)
 }
 
 pub fn generate_with_map(unit: &Unit) -> R<Output> {
+    generate_with_map_in(unit, &Context::default())
+}
+
+pub fn generate_with_map_in(unit: &Unit, ctx: &Context) -> R<Output> {
     let mut cg = Codegen {
         out: String::new(),
         indent: 0,
@@ -117,7 +136,7 @@ pub fn generate_with_map(unit: &Unit) -> R<Output> {
         current_method: None,
         cur_line: 0,
     };
-    cg.unit(unit)?;
+    cg.unit(unit, ctx)?;
     let prelude = if cg.needs_ushr { USHR_MASK } else { "" };
     Ok(split_marks(&cg.out.replace(PRELUDE_MARKER, prelude)))
 }
@@ -159,6 +178,19 @@ struct Codegen {
     current_method: Option<String>,
     /// Ligne `.rava` en cours de traduction, reportée sur chaque ligne produite.
     cur_line: u32,
+}
+
+/// `import a.b.C;` -> `use a::b::C;`, préfixé de `crate::` si `a` est un
+/// paquet du projet.
+fn use_path(imp: &Import, ctx: &Context) -> String {
+    let mut path = imp.path.join("::");
+    if imp.glob {
+        path.push_str("::*");
+    }
+    match imp.path.first() {
+        Some(head) if ctx.crate_roots.iter().any(|r| r == head) => format!("crate::{path}"),
+        _ => path,
+    }
 }
 
 impl Codegen {
@@ -210,7 +242,7 @@ impl Codegen {
 
     // ------------------------------------------------------------- unité
 
-    fn unit(&mut self, u: &Unit) -> R<()> {
+    fn unit(&mut self, u: &Unit, ctx: &Context) -> R<()> {
         self.line("// Généré par ravac depuis un source Rava (syntaxe Java, sémantique Rust).");
         self.line("// Ne pas éditer : modifiez le fichier .rava correspondant.");
         // Les identifiants Rava sont repris tels quels : on garde le camelCase Java.
@@ -218,14 +250,15 @@ impl Codegen {
         self.blank();
         self.out.push_str(PRELUDE_MARKER);
 
-        for imp in &u.imports {
-            let mut path = imp.path.join("::");
-            if imp.glob {
-                path.push_str("::*");
-            }
-            self.line(&format!("use {path};"));
+        // En Java, le paquet est le seul espace de noms : les autres fichiers du
+        // même paquet sont visibles sans import. En Rust, cela s'écrit ainsi.
+        if ctx.in_package {
+            self.line("use super::*;");
         }
-        if !u.imports.is_empty() {
+        for imp in &u.imports {
+            self.line(&format!("use {};", use_path(imp, ctx)));
+        }
+        if ctx.in_package || !u.imports.is_empty() {
             self.blank();
         }
 
@@ -396,7 +429,9 @@ impl Codegen {
     }
 
     fn main_fn(&mut self, m: &Method) -> R<()> {
-        self.open("fn main() {");
+        // `pub` pour qu'un projet multi-fichiers puisse la réexporter depuis
+        // la racine du crate — c'est ainsi que Rust accepte un `main` en module.
+        self.open("pub fn main() {");
         if let Some(p) = m.params.first() {
             self.line("#[allow(unused_variables)]");
             self.line(&format!(
@@ -1770,6 +1805,7 @@ fn std_stream_macro(path: &[Ident], name: &str) -> Option<&'static str> {
 fn render_lit(l: &Lit, span: Span) -> R<String> {
     Ok(match l {
         Lit::Bool(b) => b.to_string(),
+        Lit::Unit => "()".to_string(),
         Lit::Str(s) => format!("\"{}\"", java_escapes_to_rust(s)),
         Lit::Char(c) => format!("'{}'", java_escapes_to_rust(c)),
         Lit::Int(s) => java_int_literal(s),
@@ -1956,6 +1992,65 @@ mod tests {
         let unit = rava_parser::parse("class T { public synchronized void f() { } }").unwrap();
         let d = generate(&unit).unwrap_err();
         assert!(d.note.unwrap().contains("Mutex"));
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    /// Comme en Java : l'indentation ne porte aucun sens, les instructions sont
+    /// terminées par `;` et les blocs délimités par des accolades. Un programme
+    /// écrit sur une ligne doit produire exactement le même Rust.
+    #[test]
+    fn lindentation_ne_change_rien() {
+        let aere = "\
+class Compte {
+
+    i64 solde;
+
+    @Mut
+    public void crediter(i64 m) {
+        unless (m > 0) {
+            return;
+        }
+        this.solde += m;
+    }
+}";
+        let compacte = "class Compte{i64 solde;@Mut public void crediter(i64 m){unless(m>0){return;}this.solde+=m;}}";
+        let sur_plusieurs_lignes_absurdes = "\
+        class
+Compte
+      {
+i64
+   solde
+;
+@Mut public
+void crediter(i64
+m) { unless
+( m > 0 )
+{ return
+; } this
+.solde
++= m ; } }";
+
+        let gen = |src: &str| generate(&rava_parser::parse(src).unwrap()).unwrap();
+        assert_eq!(gen(aere), gen(compacte));
+        assert_eq!(gen(aere), gen(sur_plusieurs_lignes_absurdes));
+    }
+
+    /// L'inverse : un `;` manquant est une erreur, pas un saut de ligne implicite.
+    #[test]
+    fn un_point_virgule_manquant_est_une_erreur() {
+        let e = rava_parser::parse("class A { void f() { var x = 1\n var y = 2; } }").unwrap_err();
+        assert!(e.message.contains("`;`"), "{}", e.message);
+    }
+
+    /// Un retour à la ligne au milieu d'une expression ne la termine pas.
+    #[test]
+    fn une_expression_peut_courir_sur_plusieurs_lignes() {
+        let src = "class A { i32 f() { return 1\n + 2\n + 3; } }";
+        assert!(generate(&rava_parser::parse(src).unwrap()).unwrap().contains("1 + 2 + 3"));
     }
 }
 

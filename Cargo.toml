@@ -9,6 +9,7 @@ members = [
     "crates/rava-lsp",
     "crates/rava-json",
     "crates/rava-check",
+    "crates/rava-build",
 ]
 
 [workspace.package]
@@ -24,3 +25,4 @@ rava-parser = { path = "crates/rava-parser" }
 rava-codegen = { path = "crates/rava-codegen" }
 rava-json = { path = "crates/rava-json" }
 rava-check = { path = "crates/rava-check" }
+rava-build = { path = "crates/rava-build" }

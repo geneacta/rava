@@ -533,6 +533,8 @@ pub enum Lit {
     Str(String),
     Char(String),
     Bool(bool),
+    /// La valeur unité `()`. S'écrit `()` ou `Unit.of()`.
+    Unit,
     /// `null` -> diagnostic : Rust n'a pas de null (voir docs/IMPOSSIBLE.md).
     Null,
 }
