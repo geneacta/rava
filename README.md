@@ -93,6 +93,23 @@ Et tout ce que Rust a sans que Java l'ait — emprunts, durées de vie, `unsafe`
 macros, filtrage par motif — s'écrit avec des annotations qui restent du Java
 valide : `@Ref`, `@Mut`, `@Lifetime("a")`, `@Unsafe`, `@Derive`, `Macro.*`.
 
+## Ce qui est masqué
+
+Plusieurs constructions Java sans équivalent direct sont traduites vers **ce
+qu'un programmeur Rust écrirait à la main** — même sémantique, même coût :
+
+| Rava | Rust généré |
+|---|---|
+| `x++` en expression | `{ let t = x; x += 1; t }` |
+| `a >>> b` | décalage via le type non signé de même largeur |
+| `finalize()` | `impl Drop` — déterministe, lui |
+| `super.m(args)` | `Trait::m(self, args)` |
+| `Array<T, N>` / `Arr.of(…)` | `[T; N]` / `[a, b, c]` |
+
+Les deux réserves — relecture de la place pour `x++`, et `super.m()` interdit
+sur une méthode redéfinie — sont documentées dans
+[IMPOSSIBLE.md](docs/IMPOSSIBLE.md#masques).
+
 ## Documentation
 
 | | |

@@ -1542,6 +1542,7 @@ impl Parser {
                 self.bump();
                 let head_generics =
                     if self.tok().is_punct("<") { self.type_args()? } else { Vec::new() };
+                // `Vec::<i32>::new()` : on laisse le `::` suivant à l'itération d'après.
 
                 // `x.parse::<i32>()` : `qualified_name` a déjà absorbé `parse`
                 // dans le chemin, le turbofish porte donc sur l'appel courant.
@@ -1557,11 +1558,14 @@ impl Parser {
                     e = Expr::Call { recv, name, generics: head_generics, args, span };
                     continue;
                 }
+                // `Vec::<i32>::new()` : les arguments portent sur le type. On
+                // fabrique le chemin, la suite de la boucle traite `::new(...)`.
                 if !head_generics.is_empty() {
-                    return self.err_note(
-                        "`Type::<T>::methode()` n'est pas supporté",
-                        "les arguments de type d'un type se placent sur la déclaration : `HashMap<String, i32> m = HashMap.new();`. Voir docs/SYNTAX.md#generiques",
-                    );
+                    let Expr::Name(path, _) = &e else {
+                        return self.err("chemin de type attendu à gauche de `::<`");
+                    };
+                    e = Expr::TypePath { path: path.clone(), args: head_generics, span };
+                    continue;
                 }
 
                 let name = self.expect_ident()?;
@@ -1571,15 +1575,16 @@ impl Parser {
                 } else {
                     Vec::new()
                 };
-                let path = match &e {
-                    Expr::Name(p, _) => p.clone(),
+                let recv = match &e {
+                    Expr::Name(p, _) => Expr::Name(p.clone(), span),
+                    Expr::TypePath { .. } => e.clone(),
                     _ => return self.err("`::` attendu après un nom de type"),
                 };
                 if self.tok().is_punct("(") {
                     // `Type::assoc(args)` : appel de fonction associée.
                     let args = self.call_args()?;
                     e = Expr::Call {
-                        recv: Some(Box::new(Expr::Name(path, span))),
+                        recv: Some(Box::new(recv)),
                         name,
                         generics,
                         args,
@@ -1587,6 +1592,9 @@ impl Parser {
                     };
                 } else {
                     // `Type::method` : référence de méthode.
+                    let Expr::Name(path, _) = recv else {
+                        return self.err("référence de méthode : nom de type attendu");
+                    };
                     e = Expr::MethodRef { ty: path, name, span };
                 }
                 continue;

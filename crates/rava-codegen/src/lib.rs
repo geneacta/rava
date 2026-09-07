@@ -27,6 +27,33 @@ impl std::fmt::Display for Diag {
 
 type R<T> = Result<T, Diag>;
 
+/// Emplacement réservé aux masques, remplacé une fois la génération finie.
+const PRELUDE_MARKER: &str = "//__RAVA_PRELUDE__\n";
+
+/// Masque de `>>>` : Java n'a que des entiers signés, Rust a les deux. On
+/// reproduit le décalage logique en passant par le type non signé de même
+/// largeur — exactement ce qu'on écrirait à la main.
+const USHR_MASK: &str = r#"mod __rava {
+    /// Décalage à droite logique (`>>>` de Java).
+    pub trait UShr {
+        fn ushr(self, n: u32) -> Self;
+    }
+    macro_rules! ushr_impl {
+        ($($signed:ty => $unsigned:ty),* $(,)?) => {$(
+            impl UShr for $signed {
+                #[inline]
+                fn ushr(self, n: u32) -> Self { ((self as $unsigned) >> n) as Self }
+            }
+        )*};
+    }
+    ushr_impl!(
+        i8 => u8, i16 => u16, i32 => u32, i64 => u64, i128 => u128, isize => usize,
+        u8 => u8, u16 => u16, u32 => u32, u64 => u64, u128 => u128, usize => usize,
+    );
+}
+
+"#;
+
 fn err<T>(span: Span, msg: impl Into<String>) -> R<T> {
     Err(Diag { message: msg.into(), line: span.line, col: span.col, note: None })
 }
@@ -41,15 +68,30 @@ fn err_note<T>(span: Span, msg: impl Into<String>, note: impl Into<String>) -> R
 }
 
 pub fn generate(unit: &Unit) -> R<String> {
-    let mut cg = Codegen { out: String::new(), indent: 0, tmp: 0 };
+    let mut cg = Codegen {
+        out: String::new(),
+        indent: 0,
+        tmp: 0,
+        needs_ushr: false,
+        current_trait: None,
+        current_method: None,
+    };
     cg.unit(unit)?;
-    Ok(cg.out)
+    let prelude = if cg.needs_ushr { USHR_MASK } else { "" };
+    Ok(cg.out.replace(PRELUDE_MARKER, prelude))
 }
 
 struct Codegen {
     out: String,
     indent: usize,
     tmp: u32,
+    /// `>>>` s'appuie sur un petit masque de décalage logique, inséré dans le
+    /// fichier généré seulement s'il sert.
+    needs_ushr: bool,
+    /// Trait courant, pour traduire `super.m(...)` en `Trait::m(self, ...)`.
+    current_trait: Option<String>,
+    /// Méthode courante : `super.m()` depuis `m` serait une récursion infinie.
+    current_method: Option<String>,
 }
 
 impl Codegen {
@@ -94,6 +136,7 @@ impl Codegen {
         // Les identifiants Rava sont repris tels quels : on garde le camelCase Java.
         self.line("#![allow(non_snake_case, non_camel_case_types, unused_parens, dead_code)]");
         self.blank();
+        self.out.push_str(PRELUDE_MARKER);
 
         for imp in &u.imports {
             let mut path = imp.path.join("::");
@@ -214,7 +257,7 @@ impl Codegen {
             for k in &c.consts {
                 self.const_decl(k)?;
             }
-            for m in inherent {
+            for m in &inherent {
                 self.method(m, MethodCtx::Inherent { owner: c, fields: &c.fields })?;
             }
             self.close("}");
@@ -238,9 +281,11 @@ impl Codegen {
                 };
                 self.line(&format!("type {} = {};", a.name, self.type_(d)?));
             }
-            for m in methods {
+            self.current_trait = Some(trait_name.clone());
+            for m in &methods {
                 self.method(m, MethodCtx::TraitImpl { owner: c, fields: &c.fields })?;
             }
+            self.current_trait = None;
             self.close("}");
         }
 
@@ -282,22 +327,52 @@ impl Codegen {
     }
 
     /// Répartit les méthodes entre bloc inhérent et blocs `impl Trait for`.
-    fn split_methods<'a>(
-        c: &'a Class,
-        implements: &'a [Type],
-    ) -> R<(Vec<&'a Method>, Vec<(String, Vec<&'a Method>)>)> {
+    ///
+    /// `finalize()` est routé vers `impl Drop` : c'est ce que le programmeur
+    /// Java voulait dire, et en Rust cela s'exécute de façon déterministe.
+    fn split_methods(
+        c: &Class,
+        implements: &[Type],
+    ) -> R<(Vec<Method>, Vec<(String, Vec<Method>)>)> {
         let mut inherent = Vec::new();
-        let mut groups: Vec<(String, Vec<&Method>)> = implements
+        let mut groups: Vec<(String, Vec<Method>)> = implements
             .iter()
             .map(|t| (render_path_only(t), Vec::new()))
             .collect();
+
+        let push_to = |groups: &mut Vec<(String, Vec<Method>)>, target: String, m: Method| {
+            let short = target.rsplit("::").next().unwrap_or(&target).to_string();
+            match groups
+                .iter_mut()
+                .find(|(n, _)| *n == target || n.rsplit("::").next() == Some(short.as_str()))
+            {
+                Some((_, v)) => v.push(m),
+                None => groups.push((target, vec![m])),
+            }
+        };
 
         for m in &c.methods {
             if Self::is_main(m) {
                 continue;
             }
+            // `protected void finalize()` -> `impl Drop for T { fn drop(&mut self) }`
+            if m.name == "finalize"
+                && m.params.is_empty()
+                && matches!(m.ret.kind, TypeKind::Void)
+                && !m.modifiers.contains(&Modifier::Static)
+            {
+                let mut d = m.clone();
+                d.name = "drop".into();
+                d.modifiers.retain(|x| !matches!(x, Modifier::Public | Modifier::Protected));
+                if !has_annot(&d.annots, "Mut") {
+                    d.annots.push(Annot { name: "Mut".into(), args: Vec::new(), span: m.span });
+                }
+                d.annots.retain(|a| a.name != "Override");
+                push_to(&mut groups, "Drop".to_string(), d);
+                continue;
+            }
             let Some(ov) = find_annot(&m.annots, "Override") else {
-                inherent.push(m);
+                inherent.push(m.clone());
                 continue;
             };
             let target = match ov.first_text() {
@@ -320,16 +395,8 @@ impl Codegen {
                     }
                 }
             };
-            let short = target.rsplit("::").next().unwrap_or(&target).to_string();
-            match groups
-                .iter_mut()
-                .find(|(n, _)| *n == target || n.rsplit("::").next() == Some(short.as_str()))
-            {
-                Some((_, v)) => v.push(m),
-                None => groups.push((target, vec![m])),
-            }
+            push_to(&mut groups, target, m.clone());
         }
-        groups.retain(|(_, v)| !v.is_empty() || true);
         Ok((inherent, groups))
     }
 
@@ -414,7 +481,7 @@ impl Codegen {
             span: r.span,
         };
         let (inherent, by_trait) = Self::split_methods(&shell, &r.implements)?;
-        for m in inherent {
+        for m in &inherent {
             self.method(m, MethodCtx::Inherent { owner: &shell, fields: &shell.fields })?;
         }
         self.close("}");
@@ -429,9 +496,11 @@ impl Codegen {
                 r.name,
                 Self::generics_use(&r.generics)
             ));
-            for m in methods {
+            self.current_trait = Some(trait_name.clone());
+            for m in &methods {
                 self.method(m, MethodCtx::TraitImpl { owner: &shell, fields: &shell.fields })?;
             }
+            self.current_trait = None;
             self.close("}");
         }
         Ok(())
@@ -535,7 +604,7 @@ impl Codegen {
             for k in &e.consts {
                 self.const_decl(k)?;
             }
-            for m in inherent {
+            for m in &inherent {
                 self.method(m, MethodCtx::Inherent { owner: &shell, fields: &[] })?;
             }
             self.close("}");
@@ -550,9 +619,11 @@ impl Codegen {
                 e.name,
                 Self::generics_use(&e.generics)
             ));
-            for m in methods {
+            self.current_trait = Some(trait_name.clone());
+            for m in &methods {
                 self.method(m, MethodCtx::TraitImpl { owner: &shell, fields: &[] })?;
             }
+            self.current_trait = None;
             self.close("}");
         }
         Ok(())
@@ -571,6 +642,13 @@ impl Codegen {
     fn method(&mut self, m: &Method, ctx: MethodCtx<'_>) -> R<()> {
         if m.is_ctor {
             return self.constructor(m, ctx);
+        }
+        if m.modifiers.contains(&Modifier::Synchronized) {
+            return err_note(
+                m.span,
+                "`synchronized` n'a pas d'effet en Rust",
+                "il n'y a pas de moniteur par objet : protégez la donnée avec `Mutex<T>` ou `RwLock<T>`. Voir docs/IMPOSSIBLE.md#concurrence",
+            );
         }
         self.attrs(&m.annots, None);
 
@@ -630,7 +708,10 @@ impl Codegen {
             }
             Some(b) => {
                 self.open(&format!("{sig} {{"));
-                self.body_stmts(b, !matches!(m.ret.kind, TypeKind::Void))?;
+                let outer = self.current_method.replace(m.name.clone());
+                let r = self.body_stmts(b, !matches!(m.ret.kind, TypeKind::Void));
+                self.current_method = outer;
+                r?;
                 self.close("}");
             }
         }
@@ -819,6 +900,10 @@ impl Codegen {
     fn named_type(&self, path: &[Ident], args: &[Type], span: Span) -> R<String> {
         let last = path.last().map(String::as_str).unwrap_or("");
 
+        // Array<T, N> -> [T; N] (tableau de taille fixe)
+        if last == "Array" && path.len() == 1 && args.len() == 2 {
+            return Ok(format!("[{}; {}]", self.type_(&args[0])?, self.type_(&args[1])?));
+        }
         // Tuple<A, B, ...> -> (A, B, ...)
         if last == "Tuple" && path.len() == 1 {
             let mut parts = Vec::new();
@@ -1236,11 +1321,18 @@ impl Codegen {
             Expr::Super(span) => {
                 return err_note(
                     *span,
-                    "`super` n'existe pas en Rust",
-                    "il n'y a pas d'héritage : appelez explicitement la méthode du trait, p. ex. `Trait::method(self)`. Voir docs/IMPOSSIBLE.md#heritage",
+                    "`super` seul n'a pas de sens en Rust",
+                    "seul `super.methode(...)`, dans une classe qui implémente une interface, est traduit — en `Trait::methode(self, ...)`. Voir docs/IMPOSSIBLE.md#heritage",
                 )
             }
             Expr::Name(path, _) => render_name(path),
+            Expr::TypePath { path, args, .. } => {
+                let mut parts = Vec::new();
+                for a in args {
+                    parts.push(self.type_(a)?);
+                }
+                format!("{}::<{}>", render_name(path), parts.join(", "))
+            }
             Expr::Paren(inner, _) => format!("({})", self.expr(inner)?),
             Expr::Unary { op, expr, span } => {
                 let inner = self.expr(expr)?;
@@ -1250,31 +1342,31 @@ impl Codegen {
                     UnOp::Not => format!("!{inner}"),
                     UnOp::BitNot => format!("!{inner}"),
                     UnOp::PreInc | UnOp::PreDec => {
-                        return err_note(
-                            *span,
-                            "`++x` / `--x` ne sont pas des expressions en Rust",
-                            "utilisez-les comme instruction (`x++;`) ou écrivez `x += 1`. Voir docs/IMPOSSIBLE.md#incrementation",
-                        )
+                        let d = if *op == UnOp::PreInc { "+=" } else { "-=" };
+                        let _ = span;
+                        format!("{{ {inner} {d} 1; {inner} }}")
                     }
                     UnOp::PostInc | UnOp::PostDec => unreachable!(),
                 }
             }
-            Expr::PostIncDec { span, .. } => {
-                return err_note(
-                    *span,
-                    "`x++` / `x--` ne sont pas des expressions en Rust",
-                    "utilisez-les comme instruction à part entière. Voir docs/IMPOSSIBLE.md#incrementation",
-                )
+            // Rust n'a pas d'opérateur d'incrémentation : on produit le
+            // bloc-expression que l'on écrirait à la main.
+            Expr::PostIncDec { op, expr, .. } => {
+                let place = self.expr(expr)?;
+                let d = if *op == UnOp::PostInc { "+=" } else { "-=" };
+                let t = self.fresh("post");
+                format!("{{ let {t} = {place}; {place} {d} 1; {t} }}")
             }
             Expr::Binary { op, lhs, rhs, span } => {
+                let _ = span;
+                let l = self.expr(lhs)?;
+                let r = self.expr(rhs)?;
                 if *op == BinOp::UShr {
-                    return err_note(
-                        *span,
-                        "`>>>` n'existe pas en Rust",
-                        "le décalage est déjà logique sur les types non signés : utilisez `u32`, `u64`, ... Voir docs/IMPOSSIBLE.md#ushr",
-                    );
+                    self.needs_ushr = true;
+                    format!("__rava::UShr::ushr({l}, ({r}) as u32)")
+                } else {
+                    format!("{l} {} {r}", op.as_rust())
                 }
-                format!("{} {} {}", self.expr(lhs)?, op.as_rust(), self.expr(rhs)?)
             }
             Expr::Assign { op, target, value, .. } => {
                 let o = match op {
@@ -1431,6 +1523,13 @@ impl Codegen {
             if path.as_slice() == ["Tuple"] && name == "of" {
                 return Ok(format!("({})", rendered.join(", ")));
             }
+            // `Arr.of(a, b, c)` -> `[a, b, c]` ; `Arr.fill(v, n)` -> `[v; n]`.
+            if path.as_slice() == ["Arr"] && name == "of" {
+                return Ok(format!("[{}]", rendered.join(", ")));
+            }
+            if path.as_slice() == ["Arr"] && name == "fill" && rendered.len() == 2 {
+                return Ok(format!("[{}; {}]", rendered[0], rendered[1]));
+            }
         }
 
         let turbofish = if generics.is_empty() {
@@ -1443,11 +1542,36 @@ impl Codegen {
             format!("::<{}>", parts.join(", "))
         };
 
+        // `super.m(args)` : il n'y a pas de classe parente, mais il y a la
+        // méthode par défaut du trait — c'est `Trait::m(self, args)`.
+        if let Some(Expr::Super(sp)) = recv {
+            // `Trait::m(self)` repasse par la table de dispatch : depuis `m`,
+            // c'est un appel récursif, pas un appel au corps par défaut. Rust
+            // n'offre aucun moyen d'atteindre une valeur par défaut redéfinie.
+            if self.current_method.as_deref() == Some(name) {
+                return err_note(
+                    *sp,
+                    format!("`super.{name}(...)` depuis `{name}` boucle à l'infini"),
+                    "Rust ne permet pas d'appeler le corps par défaut d'une méthode qu'on redéfinit : `Trait::m(self)` repasse par votre propre implémentation. Extrayez la partie commune dans une autre méthode. Voir docs/IMPOSSIBLE.md#heritage",
+                );
+            }
+            let Some(t) = self.current_trait.clone() else {
+                return err_note(
+                    *sp,
+                    "`super` hors d'une implémentation d'interface",
+                    "`super.m(...)` ne se traduit que dans une classe qui implémente une interface : il devient `Trait::m(self, ...)`. Voir docs/IMPOSSIBLE.md#heritage",
+                );
+            };
+            let mut all = vec!["self".to_string()];
+            all.extend(rendered);
+            return Ok(format!("{t}::{name}{turbofish}({})", all.join(", ")));
+        }
+
         Ok(match recv {
             None => format!("{name}{turbofish}({})", rendered.join(", ")),
             Some(r) => {
                 let rs = self.expr(r)?;
-                if is_type_name(&rs) {
+                if matches!(r, Expr::TypePath { .. }) || is_type_name(&rs) {
                     format!("{rs}::{name}{turbofish}({})", rendered.join(", "))
                 } else {
                     format!("{rs}.{name}{turbofish}({})", rendered.join(", "))
@@ -1616,5 +1740,96 @@ fn contains_continue(s: &Stmt) -> bool {
         }),
         // Une boucle interne capture ses propres `continue`.
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Traduit un corps de méthode et renvoie les lignes de son bloc.
+    fn body(src: &str) -> String {
+        let unit = rava_parser::parse(&format!("class T {{ void f() {{ {src} }} }}"))
+            .expect("syntaxe");
+        let rust = generate(&unit).expect("génération");
+        let start = rust.find("fn f(&self) {").expect("fn f") + "fn f(&self) {".len();
+        let end = rust[start..].find("\n    }").expect("fin de f") + start;
+        rust[start..end].trim().to_string()
+    }
+
+    fn fails(src: &str) -> Diag {
+        let unit = rava_parser::parse(&format!("class T {{ void f() {{ {src} }} }}"))
+            .expect("syntaxe");
+        generate(&unit).expect_err("une erreur était attendue")
+    }
+
+    #[test]
+    fn incrementation_en_expression_devient_un_bloc() {
+        assert!(body("var a = i++;").starts_with("let a = { let __rava_post1 = i;"));
+        assert_eq!(body("var a = ++i;"), "let a = { i += 1; i };");
+    }
+
+    #[test]
+    fn incrementation_en_instruction_reste_simple() {
+        assert_eq!(body("i++;"), "i += 1;");
+    }
+
+    #[test]
+    fn ushr_passe_par_le_masque() {
+        assert_eq!(body("var a = x >>> 2;"), "let a = __rava::UShr::ushr(x, (2) as u32);");
+        let unit = rava_parser::parse("class T { void f() { var a = x >>> 2; } }").unwrap();
+        assert!(generate(&unit).unwrap().contains("trait UShr"));
+    }
+
+    #[test]
+    fn le_masque_ushr_nest_pas_emis_sil_ne_sert_pas() {
+        let unit = rava_parser::parse("class T { void f() { var a = x >> 2; } }").unwrap();
+        assert!(!generate(&unit).unwrap().contains("trait UShr"));
+    }
+
+    #[test]
+    fn tableaux_de_taille_fixe() {
+        assert_eq!(body("Array<i32, 3> a = Arr.of(1, 2, 3);"), "let a: [i32; 3] = [1, 2, 3];");
+        assert_eq!(body("var a = Arr.fill(0, 4);"), "let a = [0; 4];");
+    }
+
+    #[test]
+    fn arguments_de_type_portes_par_le_type() {
+        assert_eq!(body("var v = Vec::<String>::new();"), "let v = Vec::<String>::new();");
+    }
+
+    #[test]
+    fn finalize_devient_drop() {
+        let unit = rava_parser::parse(
+            "class T { protected void finalize() { g(); } }",
+        )
+        .unwrap();
+        let rust = generate(&unit).unwrap();
+        assert!(rust.contains("impl Drop for T {"), "{rust}");
+        assert!(rust.contains("fn drop(&mut self) {"), "{rust}");
+    }
+
+    #[test]
+    fn super_hors_interface_est_refuse() {
+        let d = fails("var x = super.m();");
+        assert!(d.note.unwrap().contains("implémente une interface"));
+    }
+
+    #[test]
+    fn super_recursif_est_refuse() {
+        let unit = rava_parser::parse(
+            "interface I { default int m() { return 1; } }
+             class T implements I { @Override public int m() { return super.m(); } }",
+        )
+        .unwrap();
+        let d = generate(&unit).unwrap_err();
+        assert!(d.message.contains("boucle à l'infini"), "{}", d.message);
+    }
+
+    #[test]
+    fn synchronized_est_refuse_plutot_quignore() {
+        let unit = rava_parser::parse("class T { public synchronized void f() { } }").unwrap();
+        let d = generate(&unit).unwrap_err();
+        assert!(d.note.unwrap().contains("Mutex"));
     }
 }

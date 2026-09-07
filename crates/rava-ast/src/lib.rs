@@ -385,6 +385,8 @@ pub enum Expr {
     Lit(Lit, Span),
     /// Identifiant simple ou chemin `a.b.c` non résolu.
     Name(Vec<Ident>, Span),
+    /// Chemin de type portant ses arguments : `Vec::<i32>` dans `Vec::<i32>::new()`.
+    TypePath { path: Vec<Ident>, args: Vec<Type>, span: Span },
     /// `this`
     This(Span),
     /// `super` -> non traduisible tel quel, diagnostic dédié.
@@ -460,6 +462,7 @@ impl Expr {
             | Borrow { span, .. }
             | Range { span, .. }
             | Macro { span, .. }
+            | TypePath { span, .. }
             | InstanceOf { span, .. } => *span,
             Try(_, s) | Await(_, s) | Deref(_, s) | Paren(_, s) => *s,
             Switch(sw) => sw.span,

@@ -260,6 +260,13 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       <tr><td><code>class A extends B</code></td><td>composition + <code>interface</code></td><td>pas de sous-typage entre structures</td></tr>
       <tr><td><code>instanceof</code></td><td><code>switch</code> sur une <code>enum</code></td><td>les cas sont fermés et vérifiés à la compilation</td></tr>
     </table></div>
+    <p>
+      En revanche, plusieurs réflexes Java que l'on croit perdus sont simplement
+      <strong>traduits</strong> : <code>x++</code> même en expression, <code>&gt;&gt;&gt;</code>,
+      <code>super.m()</code>, et <code>finalize()</code> — qui devient un <code>Drop</code>
+      déterministe, donc qui s'exécute vraiment. Le détail est dans
+      <a href="https://github.com/geneacta/rava/blob/main/docs/IMPOSSIBLE.md#masques">la section « masques »</a>.
+    </p>
 
     <div class="pair">
       <figure class="rava"><figcaption>Java — ce qui compile mais explose</figcaption><pre><code><span class="k">public</span> String nom(Compte c) {
@@ -471,6 +478,10 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       <tr><td><code>|a, b| a + b</code></td><td><code>(a, b) -&gt; a + b</code></td></tr>
       <tr><td><code>Point { x: 1, ..base }</code></td><td><code>new Point() { x = 1, ... base }</code></td></tr>
       <tr><td><code>vec![1, 2, 3]</code></td><td><code>new int[]{1, 2, 3}</code></td></tr>
+      <tr><td><code>[T; N]</code> · <code>[a, b, c]</code> · <code>[v; n]</code></td><td><code>Array&lt;T, N&gt;</code> · <code>Arr.of(a, b, c)</code> · <code>Arr.fill(v, n)</code></td></tr>
+      <tr><td><code>Vec::&lt;i32&gt;::new()</code></td><td>identique — les arguments portent sur le type</td></tr>
+      <tr><td><code>impl Drop for T</code></td><td><code>protected void finalize()</code>, ou <code>implements Drop</code></td></tr>
+      <tr><td><code>Trait::m(self, …)</code></td><td><code>super.m(…)</code></td></tr>
       <tr><td><code>println!("{}", x)</code></td><td><code>System.out.println("{}", x)</code></td></tr>
       <tr><td>n'importe quelle macro <code>m!(…)</code></td><td><code>Macro.m(…)</code></td></tr>
       <tr><td><code>x.parse::&lt;i32&gt;()</code></td><td><code>x.&lt;i32&gt;parse()</code> — ou le turbofish, accepté aussi</td></tr>
@@ -504,12 +515,34 @@ footer .fine { font-size: 13px; color: var(--ink-faint); }
       en route. Nommez vos méthodes de trait comme Rust les attend.
     </p>
 
+    <h3><span class="num">Les masques</span>Ce qui n'a pas de forme Java directe</h3>
+    <p>
+      Quelques constructions Java n'ont pas d'équivalent immédiat en Rust — et l'inverse.
+      Rava les traduit vers <strong>ce que vous écririez à la main</strong> : même sémantique,
+      même coût, aucune approximation.
+    </p>
+    <div class="scroll"><table>
+      <tr><th>Rava</th><th>Rust généré</th></tr>
+      <tr><td><code>x++</code> / <code>x--</code> en expression</td><td><code>{ let t = x; x += 1; t }</code></td></tr>
+      <tr><td><code>++x</code> / <code>--x</code> en expression</td><td><code>{ x += 1; x }</code></td></tr>
+      <tr><td><code>a &gt;&gt;&gt; b</code></td><td>un trait <code>UShr</code> inséré dans le fichier, qui passe par le type non signé de même largeur — émis seulement s'il sert</td></tr>
+      <tr><td><code>finalize()</code></td><td><code>impl Drop for T { fn drop(&amp;mut self) }</code></td></tr>
+      <tr><td><code>super.m(args)</code></td><td><code>Trait::m(self, args)</code></td></tr>
+    </table></div>
+    <div class="callout">
+      <span class="label">Deux réserves, documentées</span>
+      <p><code>x++</code> en expression relit la place deux fois : <code>a[f()]++</code> appellerait <code>f()</code> deux fois.
+      Et <code>super.m()</code> ne vaut que pour une méthode <em>non redéfinie</em> — sur celle que vous redéfinissez,
+      <code>Trait::m(self)</code> repasserait par votre propre implémentation. Rava refuse ce cas au lieu de produire une boucle.</p>
+    </div>
+
     <h3><span class="num">Ce qui manque</span>Les vraies limites</h3>
     <p>
-      Deux zones sortent du cadre Java et passent par une échappatoire :
-      <code>Type::&lt;T&gt;::methode()</code> (mettez les arguments de type sur la déclaration),
-      et les tableaux de taille fixe littérale <code>[T; 3]</code> (utilisez un générique constant,
-      ou <code>@Rust</code>). Tout le reste de Rust a une forme Java.
+      Il ne reste rien de significatif du côté Rust : durées de vie, types associés,
+      génériques constants, <code>dyn</code>, <code>impl Trait</code>, <code>unsafe</code>, pointeurs bruts,
+      <code>async</code>, macros, tableaux de taille fixe — tout a une forme Java.
+      Pour le reste, <code>@Rust("…")</code> et <code>Rust.expr("…")</code> insèrent du Rust brut,
+      délibérément visibles dans le code.
     </p>
     <p>
       La liste inverse — ce que <em>Java</em> sait faire et que Rava refuse — est dans

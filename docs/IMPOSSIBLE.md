@@ -17,23 +17,70 @@ autrement.
 
 ## Sommaire
 
-| Construction Java | Statut | À écrire à la place |
+| Construction Java | Statut | Traduction ou remplacement |
 |---|---|---|
 | [`null`](#null) | ❌ impossible | `Option<T>` |
 | [Exceptions (`try`/`catch`/`throw`/`throws`)](#exceptions) | ❌ impossible | `Result<T, E>` + `.q()` |
-| [Héritage de classe (`extends`, `super`)](#heritage) | ❌ impossible | composition + interfaces (traits) |
+| [Héritage de classe (`extends`)](#heritage) | ❌ impossible | composition + interfaces (traits) |
+| [`super.m()` sur une méthode redéfinie](#heritage) | ❌ impossible | extraire la partie commune |
 | [`instanceof` / downcast](#instanceof) | ❌ impossible | `switch` sur enum, ou `dyn Any` |
 | [Surcharge de méthode](#surcharge) | ❌ impossible | noms distincts, ou `@Named` |
 | [Jokers génériques `<?>`](#wildcards) | ❌ impossible | paramètre borné, `@Impl`, `@Dyn` |
 | [Varargs `int...`](#varargs) | ❌ impossible | slice `@Ref int[]` |
-| [`>>>`](#ushr) | ❌ impossible | type non signé + `>>` |
-| [`x++` en position d'expression](#incrementation) | ❌ impossible | instruction séparée, ou `x += 1` |
 | [Classes anonymes / internes non statiques](#anonymes) | ❌ impossible | lambda, ou type nommé |
 | [Ramasse-miettes, cycles d'objets](#gc) | ❌ impossible | `Rc`/`Arc` + `Weak` |
 | [Réflexion, chargement dynamique](#reflexion) | ❌ impossible | traits, `enum`, macros |
-| [`static` mutable partagé](#statics) | ⚠️ contraint | `const`, `static` immuable, `OnceLock` |
+| [`synchronized`](#concurrence) | ❌ impossible | `Mutex<T>`, `RwLock<T>` |
 | [Généricité effacée / covariance de tableau](#variance) | ❌ impossible | monomorphisation Rust |
-| [`synchronized`, `finalize`](#concurrence) | ❌ impossible | `Mutex`, `Drop` |
+| [`static` mutable partagé](#statics) | ⚠️ contraint | `const`, `OnceLock`, `Mutex` |
+| [`>>>`](#masques) | ✅ **masqué** | décalage via le non signé de même largeur |
+| [`x++` en expression](#masques) | ✅ **masqué** | bloc-expression |
+| [`finalize()`](#masques) | ✅ **masqué** | `impl Drop` — déterministe, lui |
+| [`super.m()` non redéfinie](#masques) | ✅ **masqué** | `Trait::m(self, …)` |
+
+---
+
+<a id="masques"></a>
+## D'abord : ce qui est *masqué*
+
+Certaines constructions Java n'ont pas d'équivalent **direct** en Rust, mais ont
+un équivalent **exact** : ce qu'un programmeur Rust écrirait à la main. Rava les
+traduit vers cette forme. Ce ne sont pas des approximations — la sémantique est
+identique, et le coût aussi.
+
+| Rava | Rust généré |
+|---|---|
+| `x++` / `x--` en expression | `{ let t = x; x += 1; t }` |
+| `++x` / `--x` en expression | `{ x += 1; x }` |
+| `a >>> b` | `__rava::UShr::ushr(a, b as u32)` |
+| `finalize()` | `impl Drop for T { fn drop(&mut self) }` |
+| `super.m(args)` | `Trait::m(self, args)` |
+| `Array<T, N>` | `[T; N]` |
+| `Arr.of(a, b, c)` / `Arr.fill(v, n)` | `[a, b, c]` / `[v; n]` |
+| `Vec::<T>::new()` | `Vec::<T>::new()` |
+
+Deux précisions, parce qu'un masque qui ment est pire qu'une erreur :
+
+**`>>>`.** Java n'a que des entiers signés, d'où l'opérateur. Rust a les deux
+familles, mais on ne connaît pas toujours le type à la traduction : Rava insère
+donc dans le fichier généré un trait `UShr` implémenté pour chaque largeur, qui
+passe par le type non signé correspondant. Le masque n'est émis que si `>>>`
+sert réellement, et il se compile en une seule instruction machine.
+
+**`finalize()`.** La méthode Java est appelée à un moment indéterminé, ou
+jamais. `Drop` s'exécute à la sortie de portée, toujours. Le masque vous donne
+donc *mieux* que ce que vous écriviez — mais ne comptez pas sur le même
+calendrier.
+
+**`x++` en expression** relit la place deux fois (`{ let t = x; x += 1; t }`).
+Si l'expression de place a un effet de bord — `a[f()]++` — cet effet a lieu deux
+fois. Java ne le fait qu'une fois. Écrivez l'incrémentation à part dans ce cas.
+
+**`super.m()`** ne fonctionne que sur une méthode que la classe **ne redéfinit
+pas**. Sur une méthode redéfinie, `Trait::m(self)` repasse par la table de
+dispatch, donc par votre propre implémentation : c'est une récursion infinie.
+Rust n'offre aucun moyen d'atteindre un corps par défaut que l'on remplace, et
+Rava refuse le cas explicitement plutôt que de produire une boucle.
 
 ---
 
@@ -131,11 +178,24 @@ public class Chien {
 }
 ```
 
-Pour appeler la version « parente » d'une méthode de trait, nommez-la
-explicitement au lieu d'utiliser `super` :
+`super.m(args)` est traduit en `Trait::m(self, args)` — mais **seulement pour
+une méthode que la classe ne redéfinit pas**. Sur la méthode que vous êtes en
+train de redéfinir, cet appel repasserait par votre propre implémentation :
+Rust n'a aucun moyen d'atteindre un corps par défaut remplacé, et Rava refuse
+le cas plutôt que de produire une récursion infinie.
 
 ```java
-return Animal.crier(this);        // -> Animal::crier(self)
+public interface Animal {
+    default String politesse() { return "salut"; }
+    default String crier() { return Macro.format("{} !", this.politesse()); }
+}
+
+public class Chien implements Animal {
+    @Override public String crier() {
+        return Macro.format("{} wouf", super.politesse());   // ✅ non redéfinie
+        // return super.crier();                             // ❌ récursion
+    }
+}
 ```
 
 Un `class ... implements I` reste parfaitement valide : c'est un `impl I for
@@ -239,31 +299,37 @@ devient `println!("{} {}", a, b)`.
 ---
 
 <a id="ushr"></a>
-## Pas de `>>>`
+## `>>>` : masqué, pas impossible
 
 Java a besoin de `>>>` parce que tous ses entiers sont signés. Rust a des types
 non signés, où `>>` est déjà un décalage logique.
 
+Rava accepte quand même `>>>` : voir [les masques](#masques). La forme
+idiomatique reste préférable quand vous maîtrisez le type :
+
 ```java
-int h = x >>> 3;                           // ❌
-u32 h = x >> 3;                            // ✅
+u32 h = x >> 3;                            // ✅ direct, rien à masquer
+i32 h = x >>> 3;                           // ✅ masqué, équivalent exact
 ```
 
 ---
 
 <a id="incrementation"></a>
-## `x++` uniquement en position d'instruction
+## `x++` : masqué, avec une réserve
 
-Rust n'a pas d'opérateur d'incrémentation. Rava accepte `x++;` et `++x;`
-**comme instruction** (traduit en `x += 1;`), mais pas en tant que valeur.
+Rust n'a pas d'opérateur d'incrémentation. Rava traduit `x++;` en `x += 1;` en
+position d'instruction, et en bloc-expression ailleurs :
 
 ```java
-a[i++] = 0;                                // ❌ pas d'équivalent
-int y = x++;                               // ❌
-
-i++;                                       // ✅ instruction
-for (@Mut var i = 0; i < n; i++) { }       // ✅ pas d'itération d'une boucle
+i++;                                       // -> i += 1;
+var avant = i++;                           // -> { let t = i; i += 1; t }
+var apres = ++i;                           // -> { i += 1; i }
+tampon[i++] = 10;                          // ✅
 ```
+
+La réserve : la place est relue deux fois. `a[f()]++` appellerait `f()` deux
+fois là où Java ne l'appelle qu'une. Sortez l'indice dans une variable si
+l'expression a un effet de bord.
 
 Le `for` classique reste correct même avec `continue` : `ravac` place le pas
 d'itération en tête de boucle pour que `continue` l'exécute, comme en Java.
@@ -361,17 +427,25 @@ l'exécution : la généricité est monomorphisée, pas effacée.
 <a id="concurrence"></a>
 ## Pas de `synchronized`, pas de `finalize()`
 
-Le modificateur `synchronized` est accepté par le parser (c'est un modificateur
-Java) mais **sans effet** : il n'y a pas de moniteur par objet en Rust.
-Utilisez `Mutex<T>` / `RwLock<T>`.
+`synchronized` est **refusé**, pas ignoré : il n'y a pas de moniteur par objet
+en Rust, et laisser passer le mot-clé sans effet serait un piège. Protégez la
+donnée, pas la méthode : `Mutex<T>`, `RwLock<T>`.
 
-`finalize()` n'existe pas ; implémentez `Drop` :
+`finalize()` est en revanche [masqué](#masques) vers `Drop` :
 
 ```java
-public class Fichier implements Drop {
-    @Override @Mut public void drop() { System.out.println("fermeture"); }
+public class Fichier {
+    protected void finalize() { System.out.println("fermeture"); }
 }
 ```
+```rust
+impl Drop for Fichier {
+    fn drop(&mut self) { println!("fermeture"); }
+}
+```
+
+Vous pouvez aussi écrire l'implémentation directement :
+`class Fichier implements Drop { @Override @Mut public void drop() { … } }`.
 
 En contrepartie, Rust apporte `Send` / `Sync` : les erreurs de partage entre
 fils deviennent des erreurs de compilation. Rava en hérite intégralement.
@@ -390,8 +464,10 @@ durées de vie (`@Lifetime`, `@Ref("a")`) · emprunts et emprunts mutables
 avec gardes et déconstruction (`switch` / `case ... when`) · `unsafe`
 (`@Unsafe`) · pointeurs bruts (`@Ptr`) · `async` / `.await` (`@Async`,
 `.await()`) · macros (`Macro.*`) · attributs (`@Attr`, `@Derive`, `@Repr`) ·
-tuples (`Tuple<A, B>`, `Tuple.of(a, b)`) · intervalles (`Range.of`) ·
-fermetures capturantes (`Move.of`) · et, en dernier recours, du Rust brut
+tuples (`Tuple<A, B>`, `Tuple.of(a, b)`) · tableaux de taille fixe
+(`Array<T, N>`, `Arr.of`, `Arr.fill`) · arguments de type portés par le type
+(`Vec::<T>::new()`) · intervalles (`Range.of`) · fermetures capturantes
+(`Move.of`) · `Drop` (`finalize()`) · et, en dernier recours, du Rust brut
 (`@Rust`, `Rust.expr`).
 
 ---

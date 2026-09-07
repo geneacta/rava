@@ -7,3 +7,6 @@ repository.workspace = true
 
 [dependencies]
 rava-ast.workspace = true
+
+[dev-dependencies]
+rava-parser.workspace = true

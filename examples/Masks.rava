@@ -1,0 +1,73 @@
+package examples;
+
+/*
+ * Les « masques » : des constructions Java sans équivalent direct en Rust,
+ * traduites vers ce qu'un programmeur Rust écrirait à la main.
+ *
+ *   x++ / ++x en expression   ->  bloc-expression
+ *   >>>                       ->  décalage via le type non signé de même largeur
+ *   super.m(...)              ->  Trait::m(self, ...)
+ *   finalize()                ->  impl Drop  (déterministe, lui)
+ *   Array<T, N> / Arr.of      ->  [T; N] / [a, b, c]
+ *   Vec::<T>::new()           ->  arguments de type portés par le type
+ */
+
+public interface Salueur {
+    String nom();
+    default String politesse() { return "bonjour".to_string(); }
+    default String saluer() { return Macro.format("{} {}", this.politesse(), this.nom()); }
+}
+
+public class Masks implements Salueur {
+    private String nom;
+    private u32 drapeaux;
+
+    public Masks(String nom) {
+        this.nom = nom;
+        this.drapeaux = 0xF0u32;
+    }
+
+    @Override
+    public String nom() { return this.nom.clone(); }
+
+    /** `super.m()` : la méthode par défaut du trait. */
+    @Override
+    public String saluer() {
+        return Macro.format("{} {} !", super.politesse(), this.nom());
+    }
+
+    /** `finalize()` devient `impl Drop`, et s'exécute de façon déterministe. */
+    protected void finalize() {
+        System.out.println("libération de {}", this.nom);
+    }
+
+    public static void main(String[] args) {
+        var m = new Masks("Rava".to_string());
+        System.out.println("{}", m.saluer());
+
+        // `>>>` : décalage logique via le type non signé de même largeur.
+        i32 signe = -16;
+        System.out.println("-16 >>> 2 = {}", signe >>> 2);
+        System.out.println("-16 >>  2 = {}", signe >> 2);
+
+        // `++` / `--` en position d'expression.
+        @Mut var i = 0;
+        @Mut var tampon = Arr.fill(0, 4);
+        tampon[i++] = 10;
+        tampon[i++] = 20;
+        System.out.println("tampon={:?} i={}", tampon, i);
+
+        var avant = i++;
+        var apres = ++i;
+        System.out.println("avant={} apres={} i={}", avant, apres, i);
+
+        // Tableau de taille fixe.
+        Array<i32, 3> triplet = Arr.of(1, 2, 3);
+        System.out.println("triplet={:?} len={}", triplet, triplet.len());
+
+        // Arguments de type sur le type.
+        @Mut var v = Vec::<String>::new();
+        v.push("x".to_string());
+        System.out.println("v={:?}", v);
+    }
+}

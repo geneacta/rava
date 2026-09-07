@@ -53,6 +53,7 @@ Les types **non signés** n'ont pas de nom Java : on écrit directement `u8`,
 | `Box<@Dyn Shape>` | `Box<dyn Shape>` | polymorphisme dynamique |
 | `@Impl Iterator<Item = i32>` | `impl Iterator<Item = i32>` | |
 | `Tuple<A, B>` | `(A, B)` | |
+| `Array<T, N>` | `[T; N]` | tableau de taille fixe |
 | `Unit` | `()` | |
 | `Fn2<A, B, R>` | `Fn(A, B) -> R` | idem `FnMut2`, `FnOnce2`, pour 0 à N arguments |
 
@@ -71,6 +72,7 @@ Les types **non signés** n'ont pas de nom Java : on écrit directement `u8`,
 | `@Lifetime({"a", "b: a"})` | `<'a, 'b: 'a>` |
 | `<@Const usize N>` | `<const N: usize>` |
 | `Tampon<8>` / `f.<8>capacite()` | `Tampon<8>` / `f::<8>()` (argument constant) |
+| `Vec::<i32>::new()` | `Vec::<i32>::new()` (arguments portés par le type) |
 
 ```java
 @Lifetime("a")
@@ -107,6 +109,7 @@ var n = s.<i32>parse();                   // s.parse::<i32>()
 | `enum E { … }` | `enum E { … }` |
 | `class C implements I` | `impl I for C` |
 | `static class N { … }` (imbriquée) | item Rust au même niveau |
+| `protected void finalize() { … }` | `impl Drop for C { fn drop(&mut self) { … } }` |
 
 ### Visibilité
 
@@ -321,13 +324,19 @@ if !(age >= 18) || (consentement && !banni) { … }
 ### Symboliques
 
 `+ - * / % == != < <= > >= && || ! & | ^ << >>` : identiques à Java et à Rust.
-`>>>` n'existe pas (voir [IMPOSSIBLE.md](IMPOSSIBLE.md#ushr)).
 
 | Rava | Rust |
 |---|---|
 | `c ? a : b` | `if c { a } else { b }` |
 | `(long) x` | `x as i64` |
 | `x++;` (instruction) | `x += 1;` |
+| `x++` (expression) | `{ let t = x; x += 1; t }` |
+| `++x` (expression) | `{ x += 1; x }` |
+| `a >>> b` | décalage logique via le type non signé de même largeur |
+
+`>>>` et `x++` en expression sont des [masques](IMPOSSIBLE.md#masques) : la
+traduction est celle qu'on écrirait à la main, avec une réserve documentée pour
+chacun.
 
 ---
 
@@ -350,6 +359,9 @@ if !(age >= 18) || (consentement && !banni) { … }
 | `Ref.of(x)` / `Ref.mut_(x)` | `&x` / `&mut x` |
 | `Deref.of(p)` | `*p` |
 | `Tuple.of(a, b)` | `(a, b)` |
+| `Arr.of(a, b, c)` | `[a, b, c]` |
+| `Arr.fill(v, n)` | `[v; n]` |
+| `super.m(args)` | `Trait::m(self, args)` — méthode non redéfinie uniquement |
 | `Range.of(a, b)` | `a..b` |
 | `Range.closed(a, b)` | `a..=b` |
 | `Range.from(a)` / `Range.to(b)` | `a..` / `..b` |
